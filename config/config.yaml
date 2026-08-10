@@ -125,3 +125,13 @@ logging:
   file: "logs/trading.log"
   retention_days: 30
   # SECURITY: No credentials in logs - filter applied in code
+
+# Paper-only research controls. LIVE execution is deliberately not implemented.
+signal:
+  min_expected_return: 0.002
+  cooldown_candles: 6
+paper:
+  enabled: true
+  live_trading_enabled: false
+  initial_capital: 100.0
+  max_simultaneous_positions: 2
