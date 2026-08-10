@@ -62,4 +62,5 @@ def metrics(equity,trades):
  returns=[equity[i]/equity[i-1]-1 for i in range(1,len(equity)) if equity[i-1]]; peak=equity[0] if equity else 0;dd=0
  for x in equity:peak=max(peak,x);dd=max(dd,(peak-x)/peak if peak else 0)
  wins=[t.get('pnl',0) for t in trades if t.get('pnl',0)>0]; losses=[-t.get('pnl',0) for t in trades if t.get('pnl',0)<0]
- return {'total_return':equity[-1]/equity[0]-1 if len(equity)>1 else 0,'max_drawdown':dd,'trades':len(trades),'win_rate':len(wins)/len(trades) if trades else 0,'profit_factor':sum(wins)/sum(losses) if losses else None,'sharpe':(sum(returns)/len(returns))/((sum((r-sum(returns)/len(returns))**2 for r in returns)/len(returns))**.5) if len(returns)>1 else None}
+ mean=sum(returns)/len(returns) if returns else 0; std=(sum((r-mean)**2 for r in returns)/len(returns))**.5 if returns else 0
+ return {'total_return':equity[-1]/equity[0]-1 if len(equity)>1 else 0,'max_drawdown':dd,'trades':len(trades),'win_rate':len(wins)/len(trades) if trades else 0,'profit_factor':sum(wins)/sum(losses) if losses else None,'sharpe':mean/std if std else None}
