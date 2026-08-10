@@ -457,20 +457,35 @@ def generate_final_report(all_stats: Dict[str, Any], storage: SQLiteStorage, tot
     
     return report
 
-def main():
+def build_parser():
+    """Build CLI parser (extracted for testability).
+
+    Phase 2.5 fix: accept ``--incremental`` explicitly.
+    Root cause of the reported silent failure: the documented/user command used
+    ``--incremental`` but argparse only defined ``--no-incremental``, so the
+    process died with exit code 2 ("unrecognized arguments: --incremental")
+    and fetched NOTHING. Both spellings now map to one ``incremental`` dest
+    (default True, unchanged behavior).
+    """
     import argparse
     parser = argparse.ArgumentParser(description="Phase 2 - Fetch BTC/ETH 1h/4h/1d historical data - No API keys")
     parser.add_argument("--assets", nargs="+", default=ASSETS, help="Symbols e.g., BTC/USDT ETH/USDT")
     parser.add_argument("--timeframes", nargs="+", default=TIMEFRAMES, help="Timeframes 1h 4h 1d")
     parser.add_argument("--days", type=int, default=730, help="Days of history if no existing data")
-    parser.add_argument("--no-incremental", action="store_true", help="Force full history fetch, not incremental")
+    parser.add_argument("--incremental", dest="incremental", action="store_true", default=True,
+                        help="Incremental update mode (DEFAULT). Backfills older data to reach --days of history, then fetches forward from the last stored candle.")
+    parser.add_argument("--no-incremental", dest="incremental", action="store_false",
+                        help="Force full re-fetch of the full --days history (non-incremental)")
     parser.add_argument("--db-path", type=str, default=None, help="SQLite path, default from config")
-    
+    return parser
+
+def main():
+    parser = build_parser()
     args = parser.parse_args()
-    
+
     db_path = Path(args.db_path) if args.db_path else None
-    incremental = not args.no_incremental
-    
+    incremental = args.incremental
+
     report = run_all(
         assets=args.assets,
         timeframes=args.timeframes,
@@ -478,7 +493,7 @@ def main():
         incremental=incremental,
         db_path=db_path
     )
-    
+
     return 0
 
 if __name__ == "__main__":
