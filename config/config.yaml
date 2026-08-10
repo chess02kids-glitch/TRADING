@@ -1,0 +1,127 @@
+# Kronos Trading System - Master Config
+# AUDITED Phase 1 - 2026-08-10
+# Personalized: $100 Crypto, BTC/USDT ETH/USDT, Binance via CCXT, RTX 3060
+# Timeframes revised per audit: 1h primary, 4h confirmation, 1d regime
+# Trading modes: BACKTEST, PAPER, TESTNET, LIVE - Default PAPER, LIVE disabled
+
+# =============================================================================
+# TRADING MODES - CRITICAL SAFETY
+# =============================================================================
+# BACKTEST: Historical simulation only, no real orders
+# PAPER: Simulated portfolio, logs trades, no exchange connection
+# TESTNET: Binance Testnet (https://testnet.binance.vision) - real API but fake money
+# LIVE: Real money on Binance mainnet - REQUIRES explicit enable + confirmation
+# Default MUST be PAPER. Never allow accidental live orders.
+
+trading:
+  mode: "PAPER"  # Allowed: BACKTEST, PAPER, TESTNET, LIVE - Default PAPER per audit
+  live_trading_enabled: false  # MUST be false by default - double guard
+  live_trading_confirmation: ""  # Must be set to "I_UNDERSTAND_RISK_OF_LIVE_TRADING" to allow LIVE
+  # Safety: Even if mode=LIVE, live_trading_enabled must be true AND confirmation string set
+  # Additionally, .env must contain BINANCE_LIVE_CONFIRMED=true for LIVE
+
+project:
+  name: "kronos_crypto_100"
+  version: "1.1.0-audited"
+  exchange: "binance"  # CCXT exchange id
+  market: "crypto"
+  base_currency: "USDT"
+  capital: 100.0
+
+hardware:
+  device: "cuda:0"  # RTX 3060 - change to "cpu" for CPU fallback - auto-detected in code
+  gpu_memory_gb: 12
+  cpu_threads: 8
+  model_size: "small"  # mini (4.1M) | small (24.7M) | base (102M) - See MODEL BENCHMARK section
+  batch_size: 32
+  mixed_precision: true
+
+# =============================================================================
+# TIMEFRAMES - Revised per Audit Requirement #1
+# =============================================================================
+data:
+  assets: ["BTC/USDT", "ETH/USDT"]  # CCXT format - Binance spot
+  yfinance_tickers: ["BTC-USD", "ETH-USD"]  # Fallback data source (kept for redundancy)
+  timeframes: ["1h", "4h", "1d"]  # AUDITED: 1h primary, 4h confirmation, 1d regime
+  primary_timeframe: "1h"  # Main trading signal
+  confirmation_timeframe: "4h"  # Trend confirmation
+  regime_timeframe: "1d"  # Market regime filter (bull/bear)
+  lookback: 400  # Must be <= max_context (512 for small/base, 2048 for mini)
+  pred_len: 24  # Predict 24 candles ahead on primary timeframe (24h if 1h)
+  history_days: 730
+  data_dir: "data"
+  raw_dir: "data/raw"
+  processed_dir: "data/processed"
+  db_path: "data/db/kronos_trading.db"
+
+model:
+  # HuggingFace model IDs - normal HF downloads by default (no mirror unless opted-in)
+  tokenizer_name: "NeoQuasar/Kronos-Tokenizer-base"
+  model_name: "NeoQuasar/Kronos-small"
+  # Alternatives documented:
+  # mini: tokenizer NeoQuasar/Kronos-Tokenizer-2k, model NeoQuasar/Kronos-mini, context 2048, 4.1M params
+  # small: this config, context 512, 24.7M params - balanced for RTX 3060
+  # base: same tokenizer, model NeoQuasar/Kronos-base, context 512, 102.3M params
+  cache_dir: "models"
+  device_map: "auto"
+  max_context: 512
+  temperature: 0.8
+  top_k: 50
+  top_p: 0.9
+  num_samples: 5
+
+risk:
+  risk_per_trade: 0.01
+  kelly_fraction: 0.5
+  max_daily_loss: 0.03
+  max_weekly_loss: 0.08
+  max_drawdown_circuit_breaker: 0.15
+  max_portfolio_exposure: 0.6
+  max_single_asset_exposure: 0.4
+  stop_loss_pct: 0.02
+  take_profit_pct: 0.04
+  trailing_stop: false
+  trailing_stop_activation: 0.015
+
+strategy:
+  signal_threshold: 0.6
+  entry_confirmations: 2
+  use_volume_filter: true
+  min_volume_usdt: 1000000
+  cooldown_period: 6
+  slippage_pct: 0.001
+  fee_pct: 0.001
+
+backtesting:
+  start_date: "2023-01-01"
+  end_date: "2026-08-01"
+  initial_capital: 100.0
+  benchmark: "BTC-USD"
+
+broker:
+  # CCXT is the sole exchange abstraction layer per audit #4
+  # python-binance removed - CCXT supports testnet via options
+  binance:
+    api_key_env: "BINANCE_API_KEY"  # Never hardcode - reference env var name only
+    api_secret_env: "BINANCE_SECRET_KEY"
+    # Testnet config via CCXT: 'options': {'testnet': True} or custom.urls
+    # See scripts/broker/binance_client.py for implementation
+  paper_trading_log: "data/db/paper_trades.json"
+  # Safety guard file
+  guard_module: "scripts/broker/trading_mode_guard.py"
+
+dashboard:
+  refresh_seconds: 60
+  telegram:
+    enabled: false
+    bot_token_env: "TELEGRAM_BOT_TOKEN"
+    chat_id_env: "TELEGRAM_CHAT_ID"
+  discord:
+    enabled: false
+    webhook_env: "DISCORD_WEBHOOK"
+
+logging:
+  level: "INFO"
+  file: "logs/trading.log"
+  retention_days: 30
+  # SECURITY: No credentials in logs - filter applied in code

@@ -1,0 +1,82 @@
+# Kronos Trading System - Gitignore (Security First)
+
+# === Secrets (CRITICAL) ===
+.env
+*.key
+*.secret
+credentials.json
+api_keys.txt
+*_api_key*
+.env.local
+.env.production
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+.env/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# === Kronos Model Cache (large files) ===
+models/*.bin
+models/*.safetensors
+models/kronos-*
+models/tokenizer/
+models/model/
+# Keep selected_model.yaml
+!models/selected_model.yaml
+
+# === Data (may contain sensitive P&L) ===
+data/raw/*
+data/processed/*
+data/db/*.db
+data/db/*.sqlite
+data/db/*.json
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/db/.gitkeep
+
+# Keep structure but ignore contents
+!data/**/*.md
+
+# === Logs ===
+logs/*
+!logs/.gitkeep
+*.log
+
+# === Jupyter ===
+.ipynb_checkpoints/
+*.ipynb
+notebooks/*
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# === OS ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === Trading Specific ===
+paper_trades.json
+live_trades.json
+performance_report.html
+equity_curve.png
+backtest_results/
+live_positions.json
+
+# === Node (for dashboard) ===
+node_modules/
+.streamlit/

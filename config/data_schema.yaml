@@ -1,0 +1,235 @@
+# Phase 2 - Data Schema Specification (Machine-readable)
+# BTC/USDT, ETH/USDT, 1h primary, 4h confirmation, 1d regime
+# Per audit: no API keys for public data, LIVE disabled, Kronos untouched
+
+database:
+  path: "data/db/kronos_trading.db"
+  engine: "sqlite"
+  pragmas:
+    journal_mode: "WAL"
+    synchronous: "NORMAL"
+
+exchange:
+  id: "binance"
+  type: "spot"
+  ccxt_id: "binance"
+  requires_api_key: false  # Public OHLCV does NOT require keys per requirement #3
+  rate_limit_ms: 100  # Binance, handled by ccxt enableRateLimit
+  max_limit_per_request: 1000
+
+assets:
+  - symbol: "BTC/USDT"
+    ccxt_symbol: "BTC/USDT"
+    binance_symbol: "BTCUSDT"
+    base: "BTC"
+    quote: "USDT"
+  - symbol: "ETH/USDT"
+    ccxt_symbol: "ETH/USDT"
+    binance_symbol: "ETHUSDT"
+    base: "ETH"
+    quote: "USDT"
+
+timeframes:
+  primary: "1h"
+  confirmation: "4h"
+  regime: "1d"
+  all: ["1h", "4h", "1d"]
+  milliseconds:
+    "1h": 3600000
+    "4h": 14400000
+    "1d": 86400000
+
+tables:
+  ohlcv_raw:
+    description: "Raw market data preserved, no filling, source of truth"
+    columns:
+      - name: "exchange"
+        type: "TEXT"
+        nullable: false
+        example: "binance"
+      - name: "symbol"
+        type: "TEXT"
+        nullable: false
+        example: "BTC/USDT"
+      - name: "timeframe"
+        type: "TEXT"
+        nullable: false
+        example: "1h"
+      - name: "timestamp_ms"
+        type: "INTEGER"
+        nullable: false
+        description: "Open time UTC milliseconds, primary time key"
+        example: 1690000000000
+      - name: "timestamp_utc"
+        type: "TEXT"
+        nullable: false
+        description: "ISO8601 UTC derived from timestamp_ms"
+        example: "2023-07-22T00:00:00+00:00"
+      - name: "open"
+        type: "REAL"
+        nullable: false
+      - name: "high"
+        type: "REAL"
+        nullable: false
+      - name: "low"
+        type: "REAL"
+        nullable: false
+      - name: "close"
+        type: "REAL"
+        nullable: false
+      - name: "volume"
+        type: "REAL"
+        nullable: false
+        description: "Base asset volume"
+      - name: "source"
+        type: "TEXT"
+        nullable: false
+        default: "binance_ccxt_public"
+      - name: "created_at"
+        type: "TEXT"
+        nullable: false
+        description: "Row insertion time ISO UTC"
+    primary_key: ["exchange", "symbol", "timeframe", "timestamp_ms"]
+    indexes:
+      - columns: ["symbol", "timeframe", "timestamp_ms"]
+    checks:
+      - "high >= low"
+      - "high >= open"
+      - "high >= close"
+      - "low <= open"
+      - "low <= close"
+      - "open > 0"
+      - "high > 0"
+      - "low > 0"
+      - "close > 0"
+      - "volume >= 0"
+    csv_export:
+      path_template: "data/raw/{exchange}_{symbol_underscored}_{timeframe}.csv"
+      columns: ["timestamp_ms", "timestamp_utc", "open", "high", "low", "close", "volume", "exchange", "symbol", "timeframe"]
+      sort_by: "timestamp_ms ASC"
+
+  fetch_metadata:
+    description: "Fetch history and stats per requirement"
+    columns:
+      - {name: "id", type: "INTEGER PRIMARY KEY AUTOINCREMENT"}
+      - {name: "exchange", type: "TEXT"}
+      - {name: "symbol", type: "TEXT"}
+      - {name: "timeframe", type: "TEXT"}
+      - {name: "fetch_start_ms", type: "INTEGER"}
+      - {name: "fetch_end_ms", type: "INTEGER"}
+      - {name: "candles_fetched", type: "INTEGER"}
+      - {name: "candles_inserted", type: "INTEGER"}
+      - {name: "duplicates_skipped", type: "INTEGER"}
+      - {name: "missing_candles_detected", type: "INTEGER"}
+      - {name: "first_timestamp_ms", type: "INTEGER"}
+      - {name: "last_timestamp_ms", type: "INTEGER"}
+      - {name: "first_timestamp_utc", type: "TEXT"}
+      - {name: "last_timestamp_utc", type: "TEXT"}
+      - {name: "fetch_duration_s", type: "REAL"}
+      - {name: "status", type: "TEXT"}
+      - {name: "error_message", type: "TEXT"}
+      - {name: "created_at", type: "TEXT"}
+
+  validation_reports:
+    description: "Validation results"
+    columns:
+      - {name: "id", type: "INTEGER PRIMARY KEY AUTOINCREMENT"}
+      - {name: "exchange", type: "TEXT"}
+      - {name: "symbol", type: "TEXT"}
+      - {name: "timeframe", type: "TEXT"}
+      - {name: "check_type", type: "TEXT"}
+      - {name: "is_valid", type: "BOOLEAN"}
+      - {name: "issues_found", type: "INTEGER"}
+      - {name: "details", type: "TEXT"}
+      - {name: "checked_from_ms", type: "INTEGER"}
+      - {name: "checked_to_ms", type: "INTEGER"}
+      - {name: "created_at", type: "TEXT"}
+
+validation:
+  rules:
+    duplicate:
+      description: "No duplicate (exchange, symbol, timeframe, timestamp_ms)"
+      detection: "GROUP BY HAVING COUNT>1 or batch duplicate check"
+      action: "Skip duplicate, count as duplicates_skipped"
+    missing:
+      description: "Timestamps should be contiguous with step = timeframe_ms"
+      detection: "Sort ASC, diff = ts[i+1]-ts[i], if diff > tf_ms then missing = diff/tf_ms -1"
+      action: "Report, do NOT fill, store in fetch_metadata.missing_candles_detected"
+      preserve_original: true
+    out_of_order:
+      detection: "Check if batch sorted ASC, if not flag"
+      action: "Store sorted, report"
+    invalid_ohlc:
+      checks:
+        - "high >= low"
+        - "high >= open"
+        - "high >= close"
+        - "low <= open"
+        - "low <= close"
+        - "open > 0, high >0, low>0, close>0, volume>=0, finite, not NaN"
+      action: "Reject invalid candle, log error, not inserted"
+    timezone:
+      spec: "All timestamps UTC, timestamp_ms is UTC ms from Binance, timestamp_utc is ISO UTC via pd.to_datetime(ms, unit='ms', utc=True)"
+      action: "Always store UTC"
+    pagination:
+      binance_max_limit: 1000
+      logic: "since = last_timestamp_ms + timeframe_ms, loop until until_ms"
+      test: "Mock exchange 2 per page, fetch 5, ensure 5 returned, no duplicate at boundary"
+    repeated_fetches:
+      spec: "Idempotent - same range twice should insert 0 new rows second time"
+      method: "INSERT OR IGNORE / PRIMARY KEY"
+    incremental:
+      spec: "Fetch from last_timestamp_ms + tf_ms to now, deterministic, no gaps"
+      method: "get_last_timestamp_ms(symbol, timeframe)"
+
+fees_slippage_metadata:
+  description: "Per requirement #10 - fees in config, not in raw table"
+  location: "config/config.yaml strategy.fee_pct, strategy.slippage_pct, broker.binance.fees"
+  raw_table_contains_fees: false
+  fees_applied_in: "Phase 6 backtesting, Phase 7 execution - not Phase 2 raw"
+  values:
+    fee_pct: 0.001
+    slippage_pct: 0.001
+    binance_spot_maker: 0.001
+    binance_spot_taker: 0.001
+
+fetcher:
+  requires_api_key: false
+  exchange: "binance"
+  ccxt_config:
+    enableRateLimit: true
+    options:
+      defaultType: "spot"
+  pagination:
+    max_limit: 1000
+    since_param: "last_timestamp_ms + timeframe_ms"
+  rate_limit:
+    handling: "enableRateLimit True + exponential backoff on RateLimitExceeded, NetworkError, ExchangeNotAvailable"
+    retries: 5
+    backoff_base_s: 1
+    backoff_factor: 2
+    jitter: true
+  timestamp_normalization: "UTC ms integer + ISO UTC string"
+  incremental: "get_last_timestamp_ms + timeframe_ms to now"
+
+tests_required:
+  - duplicate_candles
+  - missing_candles
+  - out_of_order_candles
+  - invalid_ohlc_high_low
+  - invalid_ohlc_high_open
+  - timezone_conversion
+  - pagination_boundaries
+  - repeated_fetches_no_duplicates
+  - incremental_updates
+  - deterministic_csv_export
+  - volume_negative
+  - timestamp_normalization_utc
+
+storage:
+  deterministic_incremental_updates: true
+  csv_export_derived_from_sqlite: true
+  csv_sort: "timestamp_ms ASC"
+  no_silent_filling: true
+  preserve_original: true
+  duplicate_handling: "PRIMARY KEY (exchange, symbol, timeframe, timestamp_ms) + INSERT OR IGNORE"

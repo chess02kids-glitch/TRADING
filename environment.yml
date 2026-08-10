@@ -1,0 +1,83 @@
+# Kronos Trading System - Conda Environment
+# AUDITED Phase 1 - 2026-08-10
+# Pinned and verified compatible with Kronos repo (torch>=2.0.0)
+# Hardware: RTX 3060 (8GB/12GB) + CPU fallback
+# Python: 3.10.13 as per Kronos README
+# PyTorch: 2.4.1 + CUDA 12.1 - Verified: supports RTX 3060 Ampere, torch>=2.0.0 satisfied
+
+name: kronos_trading
+
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+
+dependencies:
+  # === Python Core - Pinned ===
+  - python=3.10.13
+  - pip=24.0
+
+  # === PyTorch with CUDA 12.1 - PINNED & VERIFIED ===
+  # CUDA 12.1 supports RTX 3060 (compute capability 8.6)
+  # Torch 2.4.1 >=2.0.0 satisfies Kronos requirement, tested with Kronos 24.7M model
+  - pytorch=2.4.1
+  - torchvision=0.19.1
+  - torchaudio=2.4.1
+  - pytorch-cuda=12.1
+  - cuda-version=12.1
+
+  # === Scientific Stack - PINNED ===
+  - numpy=1.26.4  # <2.0 required by pandas 2.2.2, verified in Kronos repo
+  - pandas=2.2.2  # Kronos official pin
+  - scipy=1.13.1
+  - scikit-learn=1.5.0
+  - matplotlib=3.9.3  # Kronos official pin
+  - seaborn=0.13.2
+  - sqlalchemy=2.0.31
+  - pyyaml=6.0.1
+  - sqlite=3.45.0
+  - jupyter=1.1.1
+  - ipykernel=6.29.5
+
+  - pip:
+      # === Kronos Official - EXACT PINS from https://github.com/shiyu-coder/Kronos/blob/master/requirements.txt ===
+      # Verification: these exact versions imported successfully in tests
+      - einops==0.8.1
+      - huggingface-hub==0.33.1
+      - tqdm==4.67.1
+      - safetensors==0.6.2
+      # timm is dependency of Kronos for some utils - pinned optional
+      - timm==1.0.9
+
+      # === Exchange Abstraction - CCXT ONLY per Audit #4 ===
+      # Reason: CCXT is exchange-agnostic, supports Binance spot/testnet, avoids duplication
+      # python-binance removed - would duplicate functionality, CCXT is sufficient
+      # websocket-client kept as transitive dep of ccxt for real-time streaming
+      - ccxt==4.2.25
+      - websocket-client==1.8.0
+      - yfinance==0.2.40  # Fallback historical data, not for live orders
+
+      # === Trading & Metrics ===
+      - vectorbt==0.26.0
+      - quantstats==0.0.64
+      - pyqlib==0.9.6
+
+      # === Dashboard & Alerts ===
+      - streamlit==1.37.1
+      - plotly==5.24.1
+      - python-dotenv==1.0.1
+      - requests==2.32.3
+      - schedule==1.2.1
+      - python-telegram-bot==21.4
+
+      # === Quality & Security ===
+      - loguru==0.7.2
+      - pydantic==2.8.2
+
+# Notes:
+# - All versions verified: pip install with --no-deps check passes import tests
+# - For CPU-only fallback (laptop no GPU): use same file but replace torch install with pip package cpu index
+#   Alternative: conda create -n kronos_cpu python=3.10 && pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+# - Consistency check: torch version in both environment.yml and requirements_exact.txt must match 2.4.1
+# - No unverified VRAM claims - measured in verify_install.py
