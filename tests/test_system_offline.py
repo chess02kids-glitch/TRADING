@@ -3,6 +3,7 @@ from kronos_trading.preprocess import validate_context
 from kronos_trading.model import DeterministicMockPredictor
 from kronos_trading.pipeline import PredictionPipeline
 from kronos_trading.core import SignalEngine,RiskManager,PaperBroker,StateStore
+from kronos_trading.types import Signal
 from kronos_trading.backtest import Backtester
 H=3600000
 def xs(n=100):return [Candle(i*H,100+i*.1,101+i*.1,99+i*.1,100+i*.1,10) for i in range(n)]
@@ -20,4 +21,4 @@ def test_end_to_end_mock_no_lookahead_and_paper(tmp_path):
 def test_hold_and_risk_rejection():
  p=PredictionPipeline(DeterministicMockPredictor()).predict('BTC/USDT','1h',xs(),64,1,80*H)
  assert SignalEngine(min_expected_return=1).generate(p).side=='HOLD'
- assert RiskManager().check(SignalEngine().generate(p),100,.7,0,0,0)[1]=='MAX_EXPOSURE'
+ assert RiskManager().check(Signal('BTC/USDT',1,'LONG',.1,'test'),100,.7,0,0,0)[1]=='MAX_EXPOSURE'
