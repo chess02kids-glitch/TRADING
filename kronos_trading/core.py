@@ -28,7 +28,7 @@ class StateStore:
   self.conn=sqlite3.connect(path); self.conn.execute('CREATE TABLE IF NOT EXISTS events(id TEXT PRIMARY KEY,kind TEXT,ts INTEGER,payload TEXT)');self.conn.commit()
  def record(self,kind,ts,payload,event_id=None):
   event_id=event_id or f'{kind}:{ts}:{payload.get("symbol","")}'
-  self.conn.execute('INSERT OR IGNORE INTO events VALUES(?,?,?,?)',(event_id,kind,ts,json.dumps(payload,sort_keys=True)));self.conn.commit();return self.conn.total_changes>0
+  cursor=self.conn.execute('INSERT OR IGNORE INTO events VALUES(?,?,?,?)',(event_id,kind,ts,json.dumps(payload,sort_keys=True)));self.conn.commit();return cursor.rowcount == 1
  def events(self,kind=None):
   q='SELECT payload FROM events'+(' WHERE kind=?' if kind else ''); return [json.loads(x[0]) for x in self.conn.execute(q,([kind] if kind else []))]
 class PaperBroker:
