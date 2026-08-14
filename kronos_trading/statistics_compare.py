@@ -299,3 +299,125 @@ def build_statistical_comparison(kronos_rows, persistence_rows,
             'statistical significance is NOT trading profitability',
         ],
     }
+
+
+# --------------------------------------------------------------------------- #
+# Phase 5b additions: rank correlation + time-series-aware paired tests
+# --------------------------------------------------------------------------- #
+def _rankdata_average(x) -> np.ndarray:
+    """Ranks with average tie handling (1-based)."""
+    x = np.asarray(x, dtype=float)
+    order = np.argsort(x, kind='mergesort')
+    ranks = np.empty(len(x), dtype=float)
+    n = len(x)
+    i = 0
+    while i < n:
+        j = i
+        while j + 1 < n and x[order[j + 1]] == x[order[i]]:
+            j += 1
+        ranks[order[i:j + 1]] = (i + j + 2) / 2.0  # average 1-based rank
+        i = j + 1
+    return ranks
+
+
+def spearman(a, b) -> Optional[float]:
+    """Spearman rank correlation (average ties), None when undefined."""
+    a = np.asarray(a, dtype=float)
+    b = np.asarray(b, dtype=float)
+    mask = np.isfinite(a) & np.isfinite(b)
+    a, b = a[mask], b[mask]
+    if len(a) < 2:
+        return None
+    ra = _rankdata_average(a)
+    rb = _rankdata_average(b)
+    ma, mb = ra.mean(), rb.mean()
+    cov = float(((ra - ma) * (rb - mb)).sum())
+    va = float(((ra - ma) ** 2).sum())
+    vb = float(((rb - mb) ** 2).sum())
+    if va <= 1e-12 or vb <= 1e-12:
+        return None
+    return cov / math.sqrt(va * vb)
+
+
+def diebold_mariano(errors_a, errors_b, lag: Optional[int] = None,
+                    loss: str = 'abs') -> Dict[str, Any]:
+    """Two-sided Diebold-Mariano test on paired forecast losses.
+
+    ``errors_a`` / ``errors_b`` are per-timestamp loss values (default: absolute
+    errors) for two systems on identical timestamps. The loss differential
+    ``d = loss_a - loss_b`` (negative mean => system A better) is tested with a
+    Newey-West HAC standard error (fixed lag rule ``4*(n/100)**(2/9)``), which
+    is the appropriate variance estimator for serially correlated forecast
+    errors. The iid normal approximation is the only assumption.
+    """
+    a = np.asarray(errors_a, dtype=float)
+    b = np.asarray(errors_b, dtype=float)
+    mask = np.isfinite(a) & np.isfinite(b)
+    a, b = a[mask], b[mask]
+    n = len(a)
+    if n < 2:
+        return {'n': 0, 'dm_statistic': None, 'p_value': None, 'lag': lag,
+                'mean_loss_diff': None, 'winner': None, 'loss': loss,
+                'note': 'insufficient paired observations'}
+    d = a - b
+    dbar = float(d.mean())
+    if lag is None:
+        lag = max(1, int(4 * (n / 100.0) ** (2 / 9)))  # Newey-West default rule
+    lag = min(lag, n - 1)
+
+    centered = d - dbar
+    gamma0 = float((centered ** 2).sum()) / n
+    var = gamma0
+    for k in range(1, lag + 1):
+        gk = float((centered[k:] * centered[:-k]).sum()) / n
+        w = 1.0 - k / (lag + 1.0)
+        var += 2.0 * w * gk
+    var = var / n
+
+    if var <= 1e-12:
+        if abs(dbar) < 1e-12:
+            return {'n': n, 'dm_statistic': 0.0, 'p_value': 1.0, 'lag': lag,
+                    'mean_loss_diff': dbar, 'winner': 'tie', 'loss': loss,
+                    'note': 'zero-variance loss differential'}
+        var = 1e-12
+    dm = dbar / math.sqrt(var)
+    p = 2.0 * _normal_sf(abs(dm))
+    winner = 'kronos' if dbar < 0 else ('baseline' if dbar > 0 else 'tie')
+    return {'n': n, 'dm_statistic': float(dm), 'p_value': float(p),
+            'lag': lag, 'mean_loss_diff': dbar, 'winner': winner, 'loss': loss,
+            'note': 'two-sided DM, Newey-West HAC variance; negative mean loss '
+                    'diff = system A (kronos) better'}
+
+
+def circular_block_bootstrap_mean_ci(values, block_len: Optional[int] = None,
+                                     n_boot: int = 10_000, alpha: float = 0.05,
+                                     seed: int = 0) -> Dict[str, Any]:
+    """Circular block bootstrap 95% CI on the mean of ``values``.
+
+    Uses fixed-length circular blocks (default ``n**(1/3)``) to respect serial
+    correlation in forecast-error differences; a fixed seed keeps it
+    deterministic.
+    """
+    arr = np.asarray(values, dtype=float)
+    arr = arr[np.isfinite(arr)]
+    n = len(arr)
+    if n == 0:
+        return {'n': 0, 'mean': None, 'ci_low': None, 'ci_high': None,
+                'block_len': block_len, 'n_boot': n_boot, 'alpha': alpha,
+                'note': 'no finite values'}
+    if block_len is None:
+        block_len = max(1, int(round(n ** (1.0 / 3.0))))
+    block_len = int(min(block_len, n))
+    rng = np.random.default_rng(seed)
+    n_blocks = int(math.ceil(n / block_len))
+    means = np.empty(n_boot)
+    offsets = np.arange(block_len)
+    for b in range(n_boot):
+        starts = rng.integers(0, n, size=n_blocks)
+        idx = (starts[:, None] + offsets[None, :]) % n
+        means[b] = arr[idx.ravel()][:n].mean()
+    lo = float(np.percentile(means, 100.0 * alpha / 2.0))
+    hi = float(np.percentile(means, 100.0 * (1.0 - alpha / 2.0)))
+    return {'n': n, 'mean': float(arr.mean()), 'ci_low': lo, 'ci_high': hi,
+            'block_len': block_len, 'n_boot': n_boot, 'alpha': alpha,
+            'note': 'circular block bootstrap, fixed block length'}

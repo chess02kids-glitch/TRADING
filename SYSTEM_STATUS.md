@@ -17,6 +17,9 @@
 - Reference validation: **B (mismatch found → fixed)** — revision defaults now
   pinned; `amount` feature documented as a derived proxy; OHLCV/timestamp/
   normalization/API contract matches upstream bit-for-bit
+- Phase 5b (volatility research): IMPLEMENTED — serious baselines + normalized
+  target + shrinkage/regime/statistical analysis + success gate; real run
+  pending on the verified dataset
 
 ## Environment
 
@@ -279,7 +282,7 @@ The evaluator logic was validated here with a deterministic test double
 - window selection + documented timestamps;
 - CLI requires the real model (no mock fallback).
 
-Full suite: **136 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
+Full suite: **160 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
 that require the model; warning = pre-existing `PytestReturnNotNoneWarning`).
 
 ### To run the real-data robustness matrix on the target machine
@@ -304,7 +307,7 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 
 ## Testing
 
-- Full suite: `136 passed, 3 skipped, 1 warning`
+- Full suite: `160 passed, 3 skipped, 1 warning`
 - Phase 2 audit: `7 passed`
 - Offline system: `3 passed`
 - Historical-range regression: `14 passed`
@@ -312,6 +315,7 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 - Phase 4: `47 passed, 1 skipped` (skip = real-weight test)
 - Phase 5: `16 passed` (research targets)
 - Reference validation: `9 passed`
+- Phase 5b (volatility research): `24 passed`
 
 ## Safety
 
@@ -471,6 +475,76 @@ Findings:
 **Per task 7:** Phase 3 checks and all previous prediction-evaluation results
 must be revalidated with the now-pinned revisions before being treated as
 final.
+
+---
+
+## Phase 5b — Volatility / Range Research (is the range advantage genuine?)
+
+### Status: IMPLEMENTED — real experiment pending execution on the verified dataset
+
+The Phase 5 raw-range target showed Kronos beating the weak "previous range"
+persistence baseline in all 12 non-daily windows. This experiment tests whether
+that advantage survives **serious** volatility baselines, price-level
+normalization, shrinkage analysis, regime analysis, and paired statistical
+tests. Full methodology (all constants fixed a priori): see
+`docs/VOLATILITY_RESEARCH_METHODOLOGY.md`.
+
+### What was added
+
+- `kronos_trading/volatility_baselines.py` — fixed, past-only baseline family:
+  A previous-range · B rolling-mean range (5 & 22) · C EWMA range (span=22) ·
+  D HAR-style range (expanding past-only OLS, min 24 rows) + past-only
+  tercile regime assignment.
+- `kronos_trading/statistics_compare.py` — added Spearman rank correlation,
+  Diebold-Mariano (Newey-West HAC, appropriate for serially correlated
+  forecast errors), and circular block bootstrap.
+- `kronos_trading/evaluation.py` — additive `VolatilityRow` per prediction
+  (computed from the same closed-candle context; no extra inference, no
+  future data).
+- `kronos_trading/volatility_research.py` — full error analysis (MAE/RMSE,
+  normalized MAE/RMSE, Spearman/Pearson, bias, dispersion & bias ratios),
+  per-regime analysis, paired statistical tests, an 8-criterion pre-registered
+  success gate, and the A/B/C verdict.
+- CLI `volatility-research` →
+  `data/eval/volatility_research_report.json`.
+- `tests/test_volatility_research.py` — 24 tests (no-lookahead, past-only HAR
+  fitting, identical timestamps, determinism, fixed baseline definitions,
+  normalized-target correctness, regime assignment, statistical alignment,
+  empty/short-window safety, gate classification A/B/C).
+
+### Success gate (fixed a priori; all 8 must hold for verdict A)
+
+1. beats previous-range on raw-range MAE · 2. beats EWMA or HAR · 3. ≥2 of 4
+series · 4. ≥2 of 3 windows · 5. survives normalization · 6. pooled DM supports
+improvement · 7. not solely shrinkage (dispersion ≥ 0.7) · 8. ≥2 of 3 regimes.
+Verdict: A = genuine signal · B = weak/ambiguous · C = false positive.
+
+### Verification status in this environment
+
+Validated offline with a deterministic test double: the gate correctly flags a
+**shrunken** constant-range predictor as **B** (beats baselines on MAE but
+`dispersion_ratio = 0`), proving the shrinkage diagnostic works. The real
+experiment requires the GPU + weights + verified DB and is therefore
+**pending**.
+
+### To run on the target machine
+
+```bash
+python -m kronos_trading.cli volatility-research \
+  --db data\db\kronos_trading_verified.db \
+  --assets BTC/USDT ETH/USDT --timeframes 1h 4h 1d --window-size 1000
+```
+
+### GO / PIVOT / STOP decision (to be recorded after the real run)
+
+- **A (genuine)** → one follow-up volatility-only experiment.
+- **B (weak/ambiguous)** → one chosen follow-up, or abandon the zero-shot
+  volatility hypothesis.
+- **C (false positive)** → STOP the zero-shot Kronos volatility path; move to
+  the non-Kronos diagnostic baseline stage.
+
+No tuning, no threshold optimization, no trading strategy, no profitability
+claims. The frozen Phase 4/5 results are unchanged.
 
 ## Next Phase
 

@@ -17,6 +17,9 @@ from .research_targets import (TargetSpec, TARGET_SPECS, SELECTED_TARGETS,
 from .reference_validation import (REFERENCE, run_contract_comparison,
                                    build_validation_report,
                                    upstream_reference_constants)
+from .volatility_research import (run_volatility_research, evaluate_success_gate)
+from .volatility_baselines import (volatility_forecasts, assign_regime,
+                                   har_forecast, ewma_range, rolling_mean_range)
 
 __all__ = [
     "ModelManager",
@@ -54,4 +57,11 @@ __all__ = [
     "run_contract_comparison",
     "build_validation_report",
     "upstream_reference_constants",
+    "run_volatility_research",
+    "evaluate_success_gate",
+    "volatility_forecasts",
+    "assign_regime",
+    "har_forecast",
+    "ewma_range",
+    "rolling_mean_range",
 ]

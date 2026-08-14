@@ -383,11 +383,40 @@ def compute_metrics(rows: List[EvaluationRow], direction_threshold: float) -> Di
 
 
 @dataclass
+class VolatilityRow:
+    """Per-timestamp range/volatility record computed from the SAME closed-candle
+    context as the Kronos prediction (so no future data is ever used).
+
+    ``*_range`` forecasts are the strong baselines (prev / rolling5 / rolling22 /
+    EWMA / HAR) plus Kronos's own ``predicted_high - predicted_low``. The
+    normalized target divides every range by ``denom_close`` (the context's last
+    close), producing a scale-invariant percent range.
+    """
+    symbol: str
+    timeframe: str
+    window: Optional[str]
+    prediction_timestamp: int
+    regime: str
+    kronos_range: float
+    actual_range: float
+    prev_range: Optional[float]
+    rolling5_range: Optional[float]
+    rolling22_range: Optional[float]
+    ewma_range: Optional[float]
+    har_range: Optional[float]
+    denom_close: float
+
+    def asdict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
 class EvaluationResult:
     """Report + rows + baseline rows + skip accounting for one series."""
     report: Dict[str, Any] = field(default_factory=dict)
     rows: List[EvaluationRow] = field(default_factory=list)
     baseline_rows: Dict[str, List[EvaluationRow]] = field(default_factory=dict)
+    volatility_rows: List[VolatilityRow] = field(default_factory=list)
     skip_reasons: Dict[str, int] = field(default_factory=dict)
     skipped: int = 0
 
@@ -432,13 +461,14 @@ class PredictionEvaluator:
 
     # ------------------------------------------------------------ one target --
     def _evaluate_one(self, closed: List[Candle], i: int,
-                      skips: Dict[str, int]):
+                      skips: Dict[str, int],
+                      window_label: Optional[str] = None):
         """Evaluate one target candle.
 
-        Returns ``(kronos_row, persistence_row, previous_direction_row)`` or
-        ``None`` when the step is skipped. The baseline rows are derived from
-        the *same* validated context and target as the Kronos row, so they
-        share identical prediction timestamps and never see the future.
+        Returns ``(kronos_row, persistence_row, previous_direction_row,
+        volatility_row)`` or ``None`` when the step is skipped. All rows are
+        derived from the *same* validated context and target, so they share
+        identical prediction timestamps and never see the future.
         """
         cfg = self.config
         tf = self.tf_ms
@@ -537,7 +567,28 @@ class PredictionEvaluator:
         from .baselines import baseline_rows_for  # local import avoids a cycle
         persistence_row, previous_direction_row = baseline_rows_for(
             kronos_row, ctx, cfg.direction_threshold, horizon=cfg.horizon)
-        return kronos_row, persistence_row, previous_direction_row
+
+        # Strong volatility baselines + regime (past-only, from the same ctx).
+        from .volatility_baselines import volatility_forecasts, assign_regime
+        ranges = [c.high - c.low for c in ctx]
+        forecasts = volatility_forecasts(ranges)
+        regime = assign_regime(ranges)
+        volatility_row = VolatilityRow(
+            symbol=self.symbol,
+            timeframe=self.timeframe,
+            window=window_label,
+            prediction_timestamp=targets[0].timestamp_ms,
+            regime=regime,
+            kronos_range=float(predicted['high']) - float(predicted['low']),
+            actual_range=actual.high - actual.low,
+            prev_range=forecasts['prev'],
+            rolling5_range=forecasts['rolling5'],
+            rolling22_range=forecasts['rolling22'],
+            ewma_range=forecasts['ewma'],
+            har_range=forecasts['har'],
+            denom_close=ctx[-1].close,
+        )
+        return kronos_row, persistence_row, previous_direction_row, volatility_row
 
     @staticmethod
     def _validate_target(targets: List[Candle]) -> None:
@@ -573,7 +624,7 @@ class PredictionEvaluator:
 
         first_valid, last_valid = self._target_bounds(closed)
         if n == 0 or last_valid < first_valid:
-            return self._result([], [], [], {}, closed, None, None, window_label=None)
+            return self._result([], [], [], [], {}, closed, None, None, window_label=None)
 
         # Choose the last target index (end of the holdout window).
         if cfg.end_ms is not None:
@@ -597,7 +648,7 @@ class PredictionEvaluator:
             first_target = max(first_valid, last_target - cfg.max_predictions + 1)
 
         if first_target > last_target:
-            return self._result([], [], [], {}, closed, None, None, window_label=None)
+            return self._result([], [], [], [], {}, closed, None, None, window_label=None)
 
         return self._evaluate_index_window(closed, first_target, last_target,
                                            window_label=None)
@@ -609,20 +660,22 @@ class PredictionEvaluator:
         rows: List[EvaluationRow] = []
         persistence_rows: List[EvaluationRow] = []
         previous_direction_rows: List[EvaluationRow] = []
+        volatility_rows: List[VolatilityRow] = []
         skips: Dict[str, int] = {}
 
         for i in range(first_target, last_target + 1):
-            outcome = self._evaluate_one(closed, i, skips)
+            outcome = self._evaluate_one(closed, i, skips, window_label)
             if outcome is not None:
-                kronos_row, persistence_row, previous_direction_row = outcome
+                kronos_row, persistence_row, previous_direction_row, volatility_row = outcome
                 rows.append(kronos_row)
                 persistence_rows.append(persistence_row)
                 if previous_direction_row is not None:
                     previous_direction_rows.append(previous_direction_row)
+                volatility_rows.append(volatility_row)
 
         return self._result(rows, persistence_rows, previous_direction_rows,
-                            skips, closed, first_target, last_target,
-                            window_label=window_label)
+                            volatility_rows, skips, closed, first_target,
+                            last_target, window_label=window_label)
 
     def evaluate_windows(self, candles: List[Candle]):
         """Run fixed chronological windows (recent/middle/older).
@@ -647,6 +700,7 @@ class PredictionEvaluator:
     def _result(self, rows: List[EvaluationRow],
                 persistence_rows: List[EvaluationRow],
                 previous_direction_rows: List[EvaluationRow],
+                volatility_rows: List[VolatilityRow],
                 skips: Dict[str, int],
                 closed: List[Candle],
                 first_target: Optional[int], last_target: Optional[int],
@@ -710,6 +764,7 @@ class PredictionEvaluator:
         }
         return EvaluationResult(report=report, rows=rows,
                                 baseline_rows=baseline_rows,
+                                volatility_rows=volatility_rows,
                                 skip_reasons=dict(skips),
                                 skipped=sum(skips.values()))
 
