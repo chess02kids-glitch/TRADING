@@ -10,8 +10,10 @@
 - Supabase migration: COMPLETE
 - SQLite ↔ Supabase parity: PASS
 - Phase 3: PASS — real Kronos inference verified on the RTX 3050
-- Phase 4: 1h baseline comparison DONE (negative for Kronos); robustness
-  matrix (4h/1d + multi-window + statistics) IMPLEMENTED, pending execution
+- Phase 4: COMPLETE — 6 series × 3 windows evaluated; Kronos did not
+  demonstrate incremental price-prediction value over persistence (see below)
+- Phase 5: IMPLEMENTED — target-formulation research framework built and
+  tested; research targets pending execution on the verified dataset
 
 ## Environment
 
@@ -299,12 +301,13 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 
 ## Testing
 
-- Full suite: `111 passed, 3 skipped, 1 warning`
+- Full suite: `127 passed, 3 skipped, 1 warning`
 - Phase 2 audit: `7 passed`
 - Offline system: `3 passed`
 - Historical-range regression: `14 passed`
 - Phase 3: `22 passed, 2 skipped`
 - Phase 4: `47 passed, 1 skipped` (skip = real-weight test)
+- Phase 5: `16 passed` (research targets)
 
 ## Safety
 
@@ -315,24 +318,129 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 - Kronos upstream source untouched (pinned `67b630e67f6a`)
 - Verified SQLite database and Supabase data unchanged (read-only access)
 
-## Phase 4 verdict (preliminary)
+## Phase 4 verdict (final)
 
-**D. Evaluation invalid/incomplete** — the robustness evaluation is *incomplete*.
+**C. Robust evidence Kronos does NOT add predictive value beyond simple
+baselines** — for the original OHLCV close target (horizon=1).
 
-The 1h baseline comparison is complete and is **negative for Kronos** (loses to
-persistence on error metrics on both assets; does not beat previous-direction
-on BTC direction). But the generalization phase — 4h, 1d, three chronological
-windows, and paired statistical tests — has not been executed, so a robust A/B/C
-determination cannot yet be made. Once `kronos_trading.cli robustness` has run
-on the verified dataset, the verdict can be assigned from the consolidated
-report.
+The robustness evaluation completed on the real verified dataset (6 series × 3
+windows = 18 evaluations, same model/revision/context/threshold/deterministic
+recipe/no-lookahead/baselines):
+
+- Kronos lost to persistence on **all 18 windows** for close MAE, close RMSE,
+  MAPE, return MAE and return RMSE.
+- Kronos beat persistence on directional accuracy in all 18 windows, but
+  persistence predicts zero return, so this is not a meaningful directional
+  benchmark.
+- Against previous-direction, Kronos won 16/18 windows on close MAE/RMSE/MAPE
+  and return MAE/RMSE, but directional accuracy was mixed.
+- 1h/4h patterns are stable across older/middle/recent windows; daily windows
+  (~73 samples/window) are lower-confidence.
+
+Conclusion: the present Kronos-small configuration has **not** demonstrated
+incremental price-prediction value over persistence. This is the frozen
+baseline experiment (`docs/phase4_baseline_experiment.json`, SHA-256 locked).
+
+---
+
+## Phase 5 — Model/Target Research (does the poor result come from the TARGET?)
+
+### Status: IMPLEMENTED — research targets pending execution on the verified dataset
+
+Phase 5 investigates whether Phase 4's negative result is a property of the
+*target formulation* (absolute OHLC close, horizon=1) rather than of Kronos
+itself. It changes only the derived target — never the model, revision,
+tokenizer, context (512), deterministic recipe, threshold (0.0005), baselines,
+or no-lookahead rules. This is research, not optimization; no trading strategy
+is built.
+
+### Architecture check (upstream facts, cited)
+
+Kronos is an autoregressive sequence-to-sequence forecaster of the
+6-dimensional (open, high, low, close, volume, amount) vector
+(`Kronos/model/kronos.py`: `price_cols` at :489, z-scoring/clip at :544-547,
+OHLCV reconstruction at :556-558, autoregressive generation at :389). It has no
+classification head. Therefore target reformulations must preserve the
+raw-OHLCV-in / OHLCV-out contract, and a direction-classification target
+(candidate D) is rejected as an unjustified architectural change; direction is
+derived from predicted returns instead.
+
+### Selected targets (2–3 defensible, non-redundant)
+
+1. **Multi-period return (candidate E, horizon=4)** — `predicted_close[T+4]/close[T]-1`
+   vs the actual 4-candle return. Justified: Kronos is multi-step
+   autoregressive, but the frozen experiment used only horizon=1 where 1h
+   returns are noise-dominated. Contract preserved (native `pred_len`).
+   Reversible to price. Baselines: persistence (0) and a horizon-aware
+   previous-direction (`close[-1]/close[-1-4]-1`).
+2. **Next-candle range/volatility (candidate F, horizon=1)** —
+   `predicted_high - predicted_low` vs actual range. Justified: high/low are
+   native Kronos outputs the frozen experiment never scored; isolates
+   volatility structure from direction/level. Baseline: persistence (last
+   observed range); previous-direction is N/A for a non-directional target.
+3. **Volatility-normalized return (candidate B, horizon=1)** — next-candle
+   return divided by a past-only scale `std(context returns) × √horizon`.
+   Justified: crypto returns are heteroskedastic; normalizing yields a more
+   stationary target and down-weights high-volatility regimes. Contract
+   preserved (normalization applied outside the model on the derived target).
+   Reversible. Baselines: persistence (0) and previous-direction, both on the
+   same scale.
+
+Candidates A (next-period return) and C (residual over persistence) are
+subsumed by the frozen experiment's return metrics up to a price scale and were
+therefore not duplicated as separate targets.
+
+### Fair experiment design
+
+Every target reuses the identical chronological windows (older/middle/recent),
+identical closed-candle contexts, identical timestamps, and identical naive
+baselines as the frozen experiment; the model is loaded once. Success is NOT
+"any metric improved": a target is promising only if it is justified, beats the
+relevant naive baseline on untouched chronological data across more than one
+window, and does not depend on tuning.
+
+### Implementation
+
+- `kronos_trading/research_targets.py` — frozen-baseline loader + SHA-256 lock,
+  `ARCHITECTURE_CHECK`, `TargetSpec` + `TARGET_SPECS` for the three targets,
+  `compute_target_metrics()` (derives each target's metrics/baselines/comparison
+  from the same rows), and `run_research_experiment()` (reuses the base
+  horizon=1 pass for range + normalized return and a single extra horizon=4
+  pass for multi-period return).
+- `docs/phase4_baseline_experiment.json` — the immutable frozen Phase 4 record.
+- CLI `research-targets` — `python -m kronos_trading.cli research-targets --db
+  data\db\kronos_trading_verified.db --assets BTC/USDT ETH/USDT --timeframes
+  1h 4h 1d --window-size 1000` → `data/eval/research_targets_report.json`.
+- `tests/test_phase5_research_targets.py` — 16 tests: frozen hash lock,
+  architecture check, target-spec completeness, no-lookahead per target
+  (multi-period horizon-aware baseline, range persistence, normalized-return
+  scale + zero-vol skip), identical timestamps, empty/zero-variance safety,
+  deterministic repeatability, and report structure.
+
+### To run on the target machine
+
+```bash
+python -m kronos_trading.cli research-targets \
+  --db data\db\kronos_trading_verified.db \
+  --assets BTC/USDT ETH/USDT --timeframes 1h 4h 1d --window-size 1000
+
+pytest -q
+```
+
+## Phase 5 verdict (pending execution)
+
+**D. Experiment invalid/incomplete** — the research experiment is implemented
+and fully tested but has not been executed on the verified dataset (the Arena
+sandbox has no GPU, model weights, or verified DB). A/B/C will be assigned from
+`research_targets_report.json` once it runs on the target machine.
 
 ## Next Phase
 
-Phase 5+ (strategy/signals) remain blocked: build Phase 5 only if the final
-robustness verdict is **A** (robust added value) or **B** (mixed/inconclusive).
-If it is **C** (robustly no added value), investigate alternative model /
-timeframe / data formulations first. The 1h-only evidence currently points
-toward C; the robustness matrix will confirm or contradict that across
-timeframes and windows. No tuning, no window cherry-picking, and no
-profitability claims are made.
+Do **not** proceed to strategy development. The frozen Phase 4 result is C
+(no demonstrated predictive edge over persistence for the original target). If
+the Phase 5 target research also returns C, document that the current
+pretrained Kronos approach lacks sufficient evidence of predictive edge on this
+dataset and investigate alternative model/timeframe/data formulations before
+any strategy work. If a target returns A (robust promise across >1 window
+without tuning), recommend that single formulation for a future out-of-sample
+experiment. No profitability claims are made at any point.

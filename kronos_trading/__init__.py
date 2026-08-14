@@ -8,6 +8,10 @@ from .baselines import (persistence_prediction, previous_direction_prediction,
                         baseline_rows_for, build_model_comparison)
 from .robustness import (run_robustness, run_series_robustness,
                          build_consolidated_report, summarize_windows)
+from .research_targets import (TargetSpec, TARGET_SPECS, SELECTED_TARGETS,
+                               ARCHITECTURE_CHECK, frozen_baseline,
+                               frozen_baseline_verified, compute_target_metrics,
+                               run_research_experiment)
 
 __all__ = [
     "ModelManager",
@@ -29,4 +33,12 @@ __all__ = [
     "run_series_robustness",
     "build_consolidated_report",
     "summarize_windows",
+    "TargetSpec",
+    "TARGET_SPECS",
+    "SELECTED_TARGETS",
+    "ARCHITECTURE_CHECK",
+    "frozen_baseline",
+    "frozen_baseline_verified",
+    "compute_target_metrics",
+    "run_research_experiment",
 ]

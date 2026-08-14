@@ -222,6 +222,13 @@ class EvaluationRow:
     sample_count: int
     horizon: int
     direction_threshold: float
+    # Past-only context statistics (derived from the validated closed-candle
+    # context, never from the target). Used by Phase 5 target formulations.
+    context_last_close: Optional[float] = None
+    context_last_high: Optional[float] = None
+    context_last_low: Optional[float] = None
+    context_last_range: Optional[float] = None
+    context_return_vol: Optional[float] = None
 
     def asdict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -261,6 +268,16 @@ def _rmse_pairs(a, b) -> Optional[float]:
     if not pairs:
         return None
     return math.sqrt(statistics.fmean([(x - y) ** 2 for x, y in pairs]))
+
+
+def _context_return_vol(ctx: List[Candle]) -> Optional[float]:
+    """Standard deviation of per-candle returns over the context (past-only)."""
+    if len(ctx) < 2:
+        return None
+    rets = [b.close / a.close - 1.0 for a, b in zip(ctx, ctx[1:])]
+    m = statistics.fmean(rets)
+    var = statistics.fmean([(r - m) ** 2 for r in rets])
+    return math.sqrt(var)
 
 
 def _pearson(a: List[float], b: List[float]) -> Optional[float]:
@@ -508,13 +525,18 @@ class PredictionEvaluator:
             sample_count=cfg.sample_count,
             horizon=cfg.horizon,
             direction_threshold=cfg.direction_threshold,
+            context_last_close=ctx[-1].close,
+            context_last_high=ctx[-1].high,
+            context_last_low=ctx[-1].low,
+            context_last_range=ctx[-1].high - ctx[-1].low,
+            context_return_vol=_context_return_vol(ctx),
         )
 
         # Naive baselines on the SAME timestamps (derived from ctx, which ends
         # strictly before the target - no future access).
         from .baselines import baseline_rows_for  # local import avoids a cycle
         persistence_row, previous_direction_row = baseline_rows_for(
-            kronos_row, ctx, cfg.direction_threshold)
+            kronos_row, ctx, cfg.direction_threshold, horizon=cfg.horizon)
         return kronos_row, persistence_row, previous_direction_row
 
     @staticmethod

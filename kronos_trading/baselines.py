@@ -30,13 +30,17 @@ def persistence_prediction(last_close: float) -> Tuple[float, float]:
     return last_close, 0.0
 
 
-def previous_direction_prediction(ctx: List[Candle], threshold: float) -> Tuple[float, float, int]:
-    """Trend-continuation forecast from the last two *closed* candles.
+def previous_direction_prediction(ctx: List[Candle], threshold: float,
+                                  horizon: int = 1) -> Tuple[float, float, int]:
+    """Trend-continuation forecast over ``horizon`` steps.
 
-    Returns ``(predicted_close, predicted_return, predicted_direction)`` where
-    ``predicted_direction`` uses the same flatness threshold as Kronos.
+    Uses only closed candles: the realized ``horizon``-period return ending at
+    the last closed candle is ``close[-1] / close[-1-horizon] - 1`` and is
+    extrapolated forward. For ``horizon=1`` this reduces to the classic
+    previous-direction baseline. ``predicted_direction`` uses the same
+    flatness threshold as Kronos.
     """
-    prev_return = ctx[-1].close / ctx[-2].close - 1.0
+    prev_return = ctx[-1].close / ctx[-1 - horizon].close - 1.0
     predicted_close = ctx[-1].close * (1.0 + prev_return)
     return predicted_close, prev_return, direction(prev_return, threshold)
 
@@ -81,27 +85,34 @@ def _row_from_template(template: EvaluationRow, *, kind: str,
         sample_count=template.sample_count,
         horizon=template.horizon,
         direction_threshold=template.direction_threshold,
+        context_last_close=template.context_last_close,
+        context_last_high=template.context_last_high,
+        context_last_low=template.context_last_low,
+        context_last_range=template.context_last_range,
+        context_return_vol=template.context_return_vol,
     )
 
 
 def baseline_rows_for(template: EvaluationRow, ctx: List[Candle],
-                      threshold: float) -> Tuple[EvaluationRow, Optional[EvaluationRow]]:
+                      threshold: float,
+                      horizon: int = 1) -> Tuple[EvaluationRow, Optional[EvaluationRow]]:
     """Produce (persistence_row, previous_direction_row) for one Kronos row.
 
     ``ctx`` is the validated closed-candle context already used for the Kronos
     prediction (its last candle ends strictly before the target). The
-    previous-direction baseline requires at least two context candles; when
-    ``len(ctx) < 2`` it is ``None``.
+    previous-direction baseline requires at least ``horizon + 1`` context
+    candles; when ``len(ctx) < horizon + 1`` it is ``None``.
     """
     persistence = _row_from_template(
         template, kind='persistence',
         predicted_close=ctx[-1].close, predicted_return=0.0,
         directional_correct=False)  # a flat prediction never scores direction
 
-    if len(ctx) < 2:
+    if len(ctx) < horizon + 1:
         return persistence, None
 
-    predicted_close, prev_return, pred_dir = previous_direction_prediction(ctx, threshold)
+    predicted_close, prev_return, pred_dir = previous_direction_prediction(
+        ctx, threshold, horizon=horizon)
     act_dir = direction(template.actual_return, threshold)
     prev_row = _row_from_template(
         template, kind='previous_direction',

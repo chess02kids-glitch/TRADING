@@ -19,6 +19,7 @@ from .backtest import Backtester
 from .benchmark import measure_model_load, run_benchmark
 from .evaluation import (EvaluationConfig, PredictionEvaluator, parse_timestamp)
 from .robustness import run_robustness
+from .research_targets import run_research_experiment
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / 'data' / 'db' / 'kronos_trading_verified.db'
@@ -179,6 +180,27 @@ def main(argv=None):
     rb.add_argument('--output', default=None,
                     help='JSON output path (default: data/eval/robustness_report.json)')
 
+    rt = sub.add_parser('research-targets',
+                        help='Phase 5 target-formulation research (same model, '
+                             'different derived targets)')
+    rt.add_argument('--db', default=str(DEFAULT_DB))
+    rt.add_argument('--assets', nargs='+', default=['BTC/USDT', 'ETH/USDT'])
+    rt.add_argument('--timeframes', nargs='+', default=['1h', '4h', '1d'])
+    rt.add_argument('--context', type=int, default=512)
+    rt.add_argument('--window-size', type=int, default=1000)
+    rt.add_argument('--direction-threshold', type=float, default=0.0005)
+    rt.add_argument('--seed', type=int, default=0)
+    rt.add_argument('--no-deterministic', action='store_true')
+    rt.add_argument('--model', default='NeoQuasar/Kronos-small')
+    rt.add_argument('--tokenizer', default='NeoQuasar/Kronos-Tokenizer-base')
+    rt.add_argument('--model-revision', default=None)
+    rt.add_argument('--tokenizer-revision', default=None)
+    rt.add_argument('--device', default=None)
+    rt.add_argument('--max-context', type=int, default=512)
+    rt.add_argument('--cache-dir', default=None)
+    rt.add_argument('--output', default=None,
+                    help='JSON output path (default: data/eval/research_targets_report.json)')
+
     args = p.parse_args(argv)
     try:
         if args.cmd == 'predict':
@@ -189,6 +211,8 @@ def main(argv=None):
             _benchmark(args)
         elif args.cmd == 'robustness':
             _robustness(args)
+        elif args.cmd == 'research-targets':
+            _research_targets(args)
         else:
             _evaluate(args)
         return 0
@@ -342,6 +366,65 @@ def _robustness(args):
                           'summary': s['summary'],
                       } for s in report['series']]}, indent=2, default=str))
     print('saved consolidated robustness report to %s' % output, file=sys.stderr)
+
+
+def _research_targets(args):
+    if args.no_deterministic:
+        print('warning: --no-deterministic disables the argmax recipe; '
+              'sampling is stochastic and results are NOT reproducible.',
+              file=sys.stderr)
+
+    manager = ModelManager(
+        model_name=args.model,
+        tokenizer_name=args.tokenizer,
+        model_revision=args.model_revision or None,
+        tokenizer_revision=args.tokenizer_revision or None,
+        device=args.device or None,
+        max_context=args.max_context,
+        cache_dir=args.cache_dir or None,
+    ).load()
+    if not manager.available:
+        raise ModelUnavailableError(
+            'real Kronos model is unavailable for target research: %s' % manager.error)
+
+    config = EvaluationConfig(
+        context_length=args.context,
+        horizon=1,  # base target horizon; multi-period target sets its own
+        deterministic=not args.no_deterministic,
+        seed=args.seed,
+        direction_threshold=args.direction_threshold,
+        window_size=args.window_size,
+    )
+    if not config.deterministic:
+        config.top_k = 0
+        config.top_p = 0.9
+        config.sample_count = 1
+
+    series = [(s, tf) for s in args.assets for tf in args.timeframes]
+
+    def loader(symbol, timeframe):
+        return load_candles(args.db, symbol, timeframe)
+
+    report = run_research_experiment(KronosRealPredictor(manager), config,
+                                     series, loader)
+
+    output = Path(args.output) if args.output else (
+        ROOT / 'data' / 'eval' / 'research_targets_report.json')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with open(output, 'w') as f:
+        json.dump(report, f, indent=2, default=str)
+
+    print(json.dumps({
+        'kind': report['kind'],
+        'frozen_baseline_verified': report['frozen_baseline_verified'],
+        'architecture_check': report['architecture_check'],
+        'configuration': report['configuration'],
+        'targets': {
+            tid: {'spec': t['spec'], 'series': t['series']}
+            for tid, t in report['targets'].items()
+        },
+    }, indent=2, default=str))
+    print('saved research-targets report to %s' % output, file=sys.stderr)
 
 
 if __name__ == '__main__':
