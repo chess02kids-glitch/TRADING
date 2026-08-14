@@ -33,6 +33,15 @@ from .types import Candle
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 KRONOS_DIR = PROJECT_ROOT / "Kronos"
 
+# Upstream-pinned reference revisions. These are the exact revisions locked by
+# the upstream Kronos regression test (Kronos/tests/test_kronos_regression.py)
+# at pinned commit 67b630e67f6a. Our defaults pin to the SAME revisions so the
+# production pipeline is reproducible and matches the reference behavior.
+REFERENCE_MODEL_NAME = "NeoQuasar/Kronos-small"
+REFERENCE_TOKENIZER_NAME = "NeoQuasar/Kronos-Tokenizer-base"
+REFERENCE_MODEL_REVISION = "901c26c1332695a2a8f243eb2f37243a37bea320"
+REFERENCE_TOKENIZER_REVISION = "0e0117387f39004a9016484a186a908917e22426"
+
 
 class ModelUnavailableError(RuntimeError):
     """Raised when the real Kronos model/tokenizer/weights cannot be loaded."""
@@ -124,10 +133,10 @@ class ModelManager:
     """
 
     def __init__(self,
-                 model_name: str = "NeoQuasar/Kronos-small",
-                 tokenizer_name: str = "NeoQuasar/Kronos-Tokenizer-base",
-                 model_revision: Optional[str] = None,
-                 tokenizer_revision: Optional[str] = None,
+                 model_name: str = REFERENCE_MODEL_NAME,
+                 tokenizer_name: str = REFERENCE_TOKENIZER_NAME,
+                 model_revision: Optional[str] = REFERENCE_MODEL_REVISION,
+                 tokenizer_revision: Optional[str] = REFERENCE_TOKENIZER_REVISION,
                  device: Optional[str] = None,
                  max_context: int = 512,
                  local_files_only: bool = False,

@@ -13,13 +13,15 @@ from pathlib import Path
 
 from .types import Candle
 from .model import (ModelManager, ModelUnavailableError,
-                    DeterministicMockPredictor, KronosRealPredictor)
+                    DeterministicMockPredictor, KronosRealPredictor,
+                    REFERENCE_MODEL_REVISION, REFERENCE_TOKENIZER_REVISION)
 from .pipeline import PredictionPipeline
 from .backtest import Backtester
 from .benchmark import measure_model_load, run_benchmark
 from .evaluation import (EvaluationConfig, PredictionEvaluator, parse_timestamp)
 from .robustness import run_robustness
 from .research_targets import run_research_experiment
+from .reference_validation import build_validation_report
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / 'data' / 'db' / 'kronos_trading_verified.db'
@@ -50,8 +52,8 @@ def _build_pipeline(args):
     manager = ModelManager(
         model_name=args.model,
         tokenizer_name=args.tokenizer,
-        model_revision=args.model_revision or None,
-        tokenizer_revision=args.tokenizer_revision or None,
+        model_revision=args.model_revision,
+        tokenizer_revision=args.tokenizer_revision,
         device=args.device or None,
         max_context=args.max_context,
         cache_dir=args.cache_dir or None,
@@ -99,8 +101,8 @@ def main(argv=None):
     pred.add_argument('--horizon', type=int, default=1)
     pred.add_argument('--model', default='NeoQuasar/Kronos-small')
     pred.add_argument('--tokenizer', default='NeoQuasar/Kronos-Tokenizer-base')
-    pred.add_argument('--model-revision', default=None)
-    pred.add_argument('--tokenizer-revision', default=None)
+    pred.add_argument('--model-revision', default=REFERENCE_MODEL_REVISION)
+    pred.add_argument('--tokenizer-revision', default=REFERENCE_TOKENIZER_REVISION)
     pred.add_argument('--device', default=None,
                       help="'cpu' to force CPU, 'cuda:0' for GPU, omit for auto")
     pred.add_argument('--max-context', type=int, default=512)
@@ -118,8 +120,8 @@ def main(argv=None):
     bench.add_argument('--horizon', type=int, default=1)
     bench.add_argument('--model', default='NeoQuasar/Kronos-small')
     bench.add_argument('--tokenizer', default='NeoQuasar/Kronos-Tokenizer-base')
-    bench.add_argument('--model-revision', default=None)
-    bench.add_argument('--tokenizer-revision', default=None)
+    bench.add_argument('--model-revision', default=REFERENCE_MODEL_REVISION)
+    bench.add_argument('--tokenizer-revision', default=REFERENCE_TOKENIZER_REVISION)
     bench.add_argument('--device', default=None)
     bench.add_argument('--max-context', type=int, default=512)
     bench.add_argument('--cache-dir', default=None)
@@ -148,8 +150,8 @@ def main(argv=None):
                     help='DISABLE the deterministic argmax recipe (loud opt-out)')
     ev.add_argument('--model', default='NeoQuasar/Kronos-small')
     ev.add_argument('--tokenizer', default='NeoQuasar/Kronos-Tokenizer-base')
-    ev.add_argument('--model-revision', default=None)
-    ev.add_argument('--tokenizer-revision', default=None)
+    ev.add_argument('--model-revision', default=REFERENCE_MODEL_REVISION)
+    ev.add_argument('--tokenizer-revision', default=REFERENCE_TOKENIZER_REVISION)
     ev.add_argument('--device', default=None)
     ev.add_argument('--max-context', type=int, default=512)
     ev.add_argument('--cache-dir', default=None)
@@ -172,8 +174,8 @@ def main(argv=None):
     rb.add_argument('--no-deterministic', action='store_true')
     rb.add_argument('--model', default='NeoQuasar/Kronos-small')
     rb.add_argument('--tokenizer', default='NeoQuasar/Kronos-Tokenizer-base')
-    rb.add_argument('--model-revision', default=None)
-    rb.add_argument('--tokenizer-revision', default=None)
+    rb.add_argument('--model-revision', default=REFERENCE_MODEL_REVISION)
+    rb.add_argument('--tokenizer-revision', default=REFERENCE_TOKENIZER_REVISION)
     rb.add_argument('--device', default=None)
     rb.add_argument('--max-context', type=int, default=512)
     rb.add_argument('--cache-dir', default=None)
@@ -193,13 +195,27 @@ def main(argv=None):
     rt.add_argument('--no-deterministic', action='store_true')
     rt.add_argument('--model', default='NeoQuasar/Kronos-small')
     rt.add_argument('--tokenizer', default='NeoQuasar/Kronos-Tokenizer-base')
-    rt.add_argument('--model-revision', default=None)
-    rt.add_argument('--tokenizer-revision', default=None)
+    rt.add_argument('--model-revision', default=REFERENCE_MODEL_REVISION)
+    rt.add_argument('--tokenizer-revision', default=REFERENCE_TOKENIZER_REVISION)
     rt.add_argument('--device', default=None)
     rt.add_argument('--max-context', type=int, default=512)
     rt.add_argument('--cache-dir', default=None)
     rt.add_argument('--output', default=None,
                     help='JSON output path (default: data/eval/research_targets_report.json)')
+
+    rv = sub.add_parser('validate-reference',
+                        help='validate our pipeline against the upstream Kronos '
+                             'reference (regression test + fixtures)')
+    rv.add_argument('--context', type=int, default=512)
+    rv.add_argument('--pred-len', type=int, default=8)
+    rv.add_argument('--model', default='NeoQuasar/Kronos-small')
+    rv.add_argument('--tokenizer', default='NeoQuasar/Kronos-Tokenizer-base')
+    rv.add_argument('--model-revision', default=REFERENCE_MODEL_REVISION)
+    rv.add_argument('--tokenizer-revision', default=REFERENCE_TOKENIZER_REVISION)
+    rv.add_argument('--device', default=None)
+    rv.add_argument('--cache-dir', default=None)
+    rv.add_argument('--output', default=None,
+                    help='JSON output path (default: data/eval/reference_validation_report.json)')
 
     args = p.parse_args(argv)
     try:
@@ -213,6 +229,8 @@ def main(argv=None):
             _robustness(args)
         elif args.cmd == 'research-targets':
             _research_targets(args)
+        elif args.cmd == 'validate-reference':
+            _validate_reference(args)
         else:
             _evaluate(args)
         return 0
@@ -227,8 +245,8 @@ def _benchmark(args):
     manager = ModelManager(
         model_name=args.model,
         tokenizer_name=args.tokenizer,
-        model_revision=args.model_revision or None,
-        tokenizer_revision=args.tokenizer_revision or None,
+        model_revision=args.model_revision,
+        tokenizer_revision=args.tokenizer_revision,
         device=args.device or None,
         max_context=args.max_context,
         cache_dir=args.cache_dir or None,
@@ -252,8 +270,8 @@ def _evaluate(args):
     manager = ModelManager(
         model_name=args.model,
         tokenizer_name=args.tokenizer,
-        model_revision=args.model_revision or None,
-        tokenizer_revision=args.tokenizer_revision or None,
+        model_revision=args.model_revision,
+        tokenizer_revision=args.tokenizer_revision,
         device=args.device or None,
         max_context=args.max_context,
         cache_dir=args.cache_dir or None,
@@ -320,8 +338,8 @@ def _robustness(args):
     manager = ModelManager(
         model_name=args.model,
         tokenizer_name=args.tokenizer,
-        model_revision=args.model_revision or None,
-        tokenizer_revision=args.tokenizer_revision or None,
+        model_revision=args.model_revision,
+        tokenizer_revision=args.tokenizer_revision,
         device=args.device or None,
         max_context=args.max_context,
         cache_dir=args.cache_dir or None,
@@ -377,8 +395,8 @@ def _research_targets(args):
     manager = ModelManager(
         model_name=args.model,
         tokenizer_name=args.tokenizer,
-        model_revision=args.model_revision or None,
-        tokenizer_revision=args.tokenizer_revision or None,
+        model_revision=args.model_revision,
+        tokenizer_revision=args.tokenizer_revision,
         device=args.device or None,
         max_context=args.max_context,
         cache_dir=args.cache_dir or None,
@@ -425,6 +443,34 @@ def _research_targets(args):
         },
     }, indent=2, default=str))
     print('saved research-targets report to %s' % output, file=sys.stderr)
+
+
+def _validate_reference(args):
+    # Load the model if possible; the contract-level comparison runs regardless.
+    manager = ModelManager(
+        model_name=args.model,
+        tokenizer_name=args.tokenizer,
+        model_revision=args.model_revision,
+        tokenizer_revision=args.tokenizer_revision,
+        device=args.device or None,
+        max_context=512,
+        cache_dir=args.cache_dir or None,
+    ).load()
+    if not manager.available:
+        print('note: model weights unavailable (%s); running the contract-level '
+              'comparison only' % (manager.error or 'unknown'), file=sys.stderr)
+
+    report = build_validation_report(manager, context_len=args.context,
+                                     pred_len=args.pred_len)
+    print(json.dumps(report, indent=2, default=str))
+
+    output = Path(args.output) if args.output else (
+        ROOT / 'data' / 'eval' / 'reference_validation_report.json')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with open(output, 'w') as f:
+        json.dump(report, f, indent=2, default=str)
+    print('saved reference validation report to %s' % output, file=sys.stderr)
+    return 0
 
 
 if __name__ == '__main__':

@@ -14,6 +14,9 @@
   demonstrate incremental price-prediction value over persistence (see below)
 - Phase 5: IMPLEMENTED — target-formulation research framework built and
   tested; research targets pending execution on the verified dataset
+- Reference validation: **B (mismatch found → fixed)** — revision defaults now
+  pinned; `amount` feature documented as a derived proxy; OHLCV/timestamp/
+  normalization/API contract matches upstream bit-for-bit
 
 ## Environment
 
@@ -276,7 +279,7 @@ The evaluator logic was validated here with a deterministic test double
 - window selection + documented timestamps;
 - CLI requires the real model (no mock fallback).
 
-Full suite: **111 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
+Full suite: **136 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
 that require the model; warning = pre-existing `PytestReturnNotNoneWarning`).
 
 ### To run the real-data robustness matrix on the target machine
@@ -301,13 +304,14 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 
 ## Testing
 
-- Full suite: `127 passed, 3 skipped, 1 warning`
+- Full suite: `136 passed, 3 skipped, 1 warning`
 - Phase 2 audit: `7 passed`
 - Offline system: `3 passed`
 - Historical-range regression: `14 passed`
 - Phase 3: `22 passed, 2 skipped`
 - Phase 4: `47 passed, 1 skipped` (skip = real-weight test)
 - Phase 5: `16 passed` (research targets)
+- Reference validation: `9 passed`
 
 ## Safety
 
@@ -433,6 +437,40 @@ pytest -q
 and fully tested but has not been executed on the verified dataset (the Arena
 sandbox has no GPU, model weights, or verified DB). A/B/C will be assigned from
 `research_targets_report.json` once it runs on the target machine.
+
+---
+
+## Reference-pipeline validation (before further research)
+
+Strict validation of our pipeline against the upstream Kronos reference
+(regression test + fixtures at `67b630e67f6a`). See
+`docs/REFERENCE_VALIDATION.md` and `kronos_trading/reference_validation.py`
+(CLI: `python -m kronos_trading.cli validate-reference`).
+
+**Verdict: B — pipeline mismatch found (fixed).**
+
+Findings:
+
+1. **FIXED** — model/tokenizer revision defaults were unpinned; `ModelManager`
+   and the CLI now pin `901c26c1…` / `0e011738…` by default.
+2. **Documented (unfixable without data changes)** — the `amount` feature is an
+   upstream-derived proxy (`volume × mean(price)`) because the verified Binance
+   dataset has no turnover column; the reference feeds real turnover.
+3. Everything else — OHLCV columns, timestamp features, per-sequence
+   z-score + clip[-5,5] normalization, prediction API, and the deterministic
+   argmax recipe (top_k=1/top_p=1.0 + eval) — matches the reference
+   **bit-for-bit** on the OHLCV channels (verified offline with the real
+   upstream `predict()` preprocessing).
+4. **Decoding:** upstream's intended/default decoding is **probabilistic
+   nucleus sampling** (`top_k=0`, `top_p=0.9`, `torch.multinomial`); the
+   deterministic argmax is the upstream regression-test variant. No production
+   default was changed.
+5. Output-level equality (vs `regression_output_512.csv`) requires the model
+   weights and is therefore **pending on the target machine**.
+
+**Per task 7:** Phase 3 checks and all previous prediction-evaluation results
+must be revalidated with the now-pinned revisions before being treated as
+final.
 
 ## Next Phase
 
