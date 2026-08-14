@@ -29,7 +29,7 @@ from .classical_volatility import (run_classical_volatility_benchmark,
 from .ml_volatility import run_ml_vs_har
 from .cross_asset import run_cross_asset
 from .derivatives_volatility import run_derivatives_volatility
-from .derivatives_data import (fetch_derivatives, save_derivatives,
+from .derivatives_data import (fetch_funding_only, save_derivatives,
                                load_derivatives)
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -304,16 +304,16 @@ def main(argv=None):
                          'data/eval/cross_asset_volatility_report.json)')
 
     dv = sub.add_parser('derivatives-volatility',
-                        help='Phase 8: derivatives positioning (funding/OI/basis) '
-                             'vs frozen HAR, linear extension')
+                        help='Phase 8 (F-01): funding-only positioning vs frozen '
+                             'HAR, linear extension')
     dv.add_argument('--db', default=str(DEFAULT_DB))
     dv.add_argument('--assets', nargs='+', default=['BTC/USDT', 'ETH/USDT'])
     dv.add_argument('--timeframes', nargs='+', default=['1h', '4h', '1d'])
     dv.add_argument('--context', type=int, default=512)
     dv.add_argument('--window-size', type=int, default=1000)
     dv.add_argument('--fetch', action='store_true',
-                    help='fetch public Binance USD-M derivatives data first '
-                         '(funding / open interest / premium index; no API key)')
+                    help='fetch public Binance USD-M settled funding history '
+                         '(funding-only; no API key)')
     dv.add_argument('--output', default=None,
                     help='JSON output path (default: '
                          'data/eval/derivatives_volatility_report.json)')
@@ -827,23 +827,22 @@ def _derivatives_volatility(args):
     if args.fetch:
         import time as _time
         now_ms = int(_time.time() * 1000)
-        # funding history ~ 2 years back (8h cadence => ~2200 rows/2y)
+        # settled funding history ~ 2 years back (8h cadence => ~2200 rows/2y)
         start_ms = now_ms - 730 * 86400000
         for a in assets:
             sym = symbol_of(a)
-            data = fetch_derivatives(sym, period='1h', start_ms=start_ms)
+            data = fetch_funding_only(sym, start_ms=start_ms)
             path = save_derivatives(sym, data)
-            print('fetched derivatives for %s -> %s (funding=%d, oi=%d, basis=%d)'
-                  % (sym, path, len(data['funding']), len(data['open_interest']),
-                     len(data['basis'])), file=sys.stderr)
+            print('fetched funding for %s -> %s (%d observations)'
+                  % (sym, path, len(data['funding'])), file=sys.stderr)
 
     def loader(symbol, timeframe):
         return load_candles(args.db, symbol, timeframe)
 
-    def deriv_loader(symbol):
+    def funding_loader(symbol):
         return load_derivatives(symbol)
 
-    report = run_derivatives_volatility(loader, deriv_loader, config, series)
+    report = run_derivatives_volatility(loader, funding_loader, config, series)
 
     output = Path(args.output) if args.output else (
         ROOT / 'data' / 'eval' / 'derivatives_volatility_report.json')

@@ -1,21 +1,23 @@
-"""Phase 8 - derivatives positioning vs frozen HAR.
+"""Phase 8 (F-01) - funding-only positioning vs frozen HAR.
 
-Tests whether three derivatives-positioning covariates (settled funding rate,
-22-bar open-interest log change, perpetual basis) contain incremental
-information for next-candle normalized range beyond the frozen single-asset
-HAR model.
+The pre-registered Phase 8 experiment is FUNDING-ONLY. It tests whether two
+derived funding covariates contain incremental information for next-candle
+normalized range beyond the frozen single-asset HAR model:
 
-H0: funding / OI-change / basis provide no incremental information beyond HAR.
-H1: they provide incremental information.
+    funding_mean_24h     = mean of settled funding rates in (t-24h, t]
+    abs_funding_mean_24h = mean of |funding rate| in (t-24h, t]
+
+H0: funding information provides no incremental information beyond HAR.
+H1: funding information provides incremental information.
 
 Design (pre-registered, see docs/DERIVATIVES_METHODOLOGY.md):
 
 * Target: normalized next-candle range (raw range secondary).
 * Frozen baseline: single-asset HAR, unchanged.
-* Exactly 3 external features, point-in-time (timestamp <= prediction time).
+* Exactly 2 external features (derived from settled funding), point-in-time.
 * Model: HAR + linear extension, expanding past-only OLS on raw range, refit
   every step, min 24 training rows. No ML, no feature selection, no tuning.
-* Missing required derivative observation => skip that row (no forward-fill,
+* Missing required funding observation => skip that row (no forward-fill,
   no interpolation).
 * Pre-registered C1-C7 gate; PASS = all 7, B = C1 true only, C = C1 false.
 """
@@ -26,7 +28,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
-from .derivatives_data import align_derivatives, oi_log_change_22
+from .derivatives_data import funding_features_24h
 from .evaluation import EvaluationConfig, PredictionEvaluator, VolatilityRow
 from .ml_volatility import _StubPredictor
 from .statistics_compare import (circular_block_bootstrap_mean_ci,
@@ -39,24 +41,22 @@ MIN_HISTORY = 24
 MIN_TRAIN_ROWS = 24
 REFIT_EVERY = 1
 PRIMARY_ALPHA = 0.05
-FUNDING_INTERVAL_MS = 8 * 3600 * 1000  # Binance USD-M funding settles every 8h
 
 FEATURE_NAMES = ['har_range_prev', 'har_mean5', 'har_mean22',
-                 'funding', 'oi_chg22', 'basis']
+                 'funding_mean_24h', 'abs_funding_mean_24h']
 
 FEATURE_DESCRIPTIONS = {
     'har_range_prev': 'target asset previous raw range (high-low)',
     'har_mean5': 'target asset mean raw range over last 5',
     'har_mean22': 'target asset mean raw range over last 22',
-    'funding': 'last SETTLED Binance USD-M perpetual funding rate with funding_time <= t',
-    'oi_chg22': '22-bar log change of aggregate open interest, last OI snapshot <= t',
-    'basis': 'perpetual basis/premium mark_price/spot_index - 1, snapshot <= t',
+    'funding_mean_24h': 'mean of settled funding rates in (t-24h, t]',
+    'abs_funding_mean_24h': 'mean of |funding rate| in (t-24h, t]',
 }
 
 VERDICT_MEANING = {
-    'PASS': 'derivatives positioning adds genuine incremental value over HAR',
-    'B': 'weak / ambiguous derivatives benefit',
-    'C': 'derivatives positioning does not robustly beat HAR',
+    'PASS': 'funding positioning adds genuine incremental value over HAR',
+    'B': 'weak / ambiguous funding benefit',
+    'C': 'funding positioning does not robustly beat HAR',
     'pending': 'not enough eligible evidence to classify',
 }
 
@@ -64,15 +64,16 @@ VERDICT_MEANING = {
 # --------------------------------------------------------------------------- #
 # Feature construction (point-in-time, no forward-fill)
 # --------------------------------------------------------------------------- #
-def build_derivatives_features(target: List[Candle], deriv: Dict[str, List[Optional[float]]],
+def build_derivatives_features(target: List[Candle],
+                               funding_rows: List[Dict[str, Any]],
                                step_ms: int) -> Dict[str, Any]:
-    """Build (X, y_raw, y_norm, ts, valid) with target + derivative features.
+    """Build (X, y_raw, y_norm, ts, valid) with target + funding features.
 
     Row ``j`` corresponds to the target candle with open time ``T_j``. Target
-    HAR features use only target candles with index < j. Derivative features
-    use the aligned series value at ``T_j - step_ms`` (the last observation
-    available at or before T_j); a missing value makes the row invalid (skip,
-    never forward-filled).
+    HAR features use only target candles with index < j. Funding features use
+    only settled funding rates with funding_time <= T_j (prediction timestamp),
+    computed by ``funding_features_24h``; a missing/stale observation makes the
+    row invalid (skip, never forward-filled).
     """
     n = len(target)
     X = np.full((n, len(FEATURE_NAMES)), np.nan, dtype=float)
@@ -91,21 +92,10 @@ def build_derivatives_features(target: List[Candle], deriv: Dict[str, List[Optio
     t_low = np.array([c.low for c in target], dtype=float)
     t_range = t_high - t_low
 
-    # query timestamps for derivative alignment = open time - step (last bar
-    # whose information is fully available at or before T_j)
-    query_ts = (ts - step_ms).tolist()
-    # Point-in-time with staleness bounds (a missing observation is a skip,
-    # never a stale forward-fill):
-    #   funding: last settled rate within one 8h funding interval
-    #   open interest / basis: last snapshot within one candle step
-    aligned = align_derivatives(
-        deriv, query_ts,
-        max_staleness_ms={'funding': FUNDING_INTERVAL_MS,
-                          'open_interest': step_ms,
-                          'basis': step_ms})
-    funding = aligned['funding']
-    basis = aligned['basis']
-    oi_chg = oi_log_change_22(aligned['open_interest'])
+    # Funding features at each prediction timestamp (target candle open time).
+    feat = funding_features_24h(funding_rows, ts.tolist())
+    funding_mean = feat['funding_mean_24h']
+    abs_funding_mean = feat['abs_funding_mean_24h']
 
     def rolling_mean(a, w, end):
         if end < w:
@@ -121,11 +111,12 @@ def build_derivatives_features(target: List[Candle], deriv: Dict[str, List[Optio
         y_raw[j] = t_range[j]
         y_norm[j] = t_range[j] / t_close[j - 1]
 
-        f, o, b = funding[j], oi_chg[j], basis[j]
-        if f is None or o is None or b is None:
+        f_mean = funding_mean[j]
+        f_abs = abs_funding_mean[j]
+        if f_mean is None or f_abs is None:
             missing += 1
             continue
-        row = [har_prev, har_mean5, har_mean22, f, o, b]
+        row = [har_prev, har_mean5, har_mean22, f_mean, f_abs]
         if not all(math.isfinite(v) for v in row):
             missing += 1
             continue
@@ -358,21 +349,21 @@ def _window_record(asset: str, series: str, timeframe: str, window: str,
         'ext_bias_ratio': sn['ext']['bias_ratio'],
         'improvement_vs_har_nmae_pct': analysis['improvement_vs_har_pct']['norm_mae_pct'],
         'improvement_vs_har_raw_mae_pct': analysis['improvement_vs_har_pct']['raw_mae_pct'],
-        'leaks': leaks, 'missing_derivatives': missing,
+        'leaks': leaks, 'missing_funding': missing,
         'regime_ext_beats_har': {reg: analysis['regimes'][reg]['ext_beats_har']
                                  for reg in ('low', 'medium', 'high')},
     }
 
 
 def run_derivatives_volatility(load_candles: Callable[[str, str], List[Candle]],
-                               load_derivatives: Callable[[str], Dict[str, List[Dict[str, Any]]]],
+                               load_funding: Callable[[str], Dict[str, List[Dict[str, Any]]]],
                                config: EvaluationConfig,
                                series: List[Tuple[str, str]]) -> Dict[str, Any]:
-    """Run the derivatives-vs-HAR experiment.
+    """Run the funding-only (F-01) derivatives-vs-HAR experiment.
 
-    ``load_derivatives(symbol)`` returns {'funding', 'open_interest', 'basis'}
-    lists of {'timestamp_ms', <value>} dicts (point-in-time, fetched by
-    ``derivatives_data``).
+    ``load_funding(symbol)`` returns ``{'funding': [{timestamp_ms, funding_rate}]}``
+    (point-in-time settled funding history; see ``derivatives_data``). No open
+    interest or basis is required or read.
     """
     series_output: Dict[str, Any] = {}
     window_records: List[Dict[str, Any]] = []
@@ -385,11 +376,12 @@ def run_derivatives_volatility(load_candles: Callable[[str, str], List[Candle]],
 
     for symbol, timeframe in series:
         candles = load_candles(symbol, timeframe)
-        deriv = load_derivatives(symbol_of(symbol))
+        funding_data = load_funding(symbol_of(symbol))
+        funding_rows = funding_data.get('funding', [])
         ev = PredictionEvaluator(_StubPredictor(), config, symbol, timeframe)
         closed = ev._closed_data(candles)
         step_ms = ev.tf_ms
-        built = build_derivatives_features(closed, deriv, step_ms)
+        built = build_derivatives_features(closed, funding_rows, step_ms)
         ts_to_idx = {int(t): i for i, t in enumerate(built['ts'])}
         windows, window_info = ev.evaluate_windows(candles)
 
@@ -412,7 +404,7 @@ def run_derivatives_volatility(load_candles: Callable[[str, str], List[Candle]],
         series_output[symbol] = {'timeframe': timeframe,
                                  'window_info': window_info,
                                  'windows': per_window,
-                                 'missing_derivatives': built['missing']}
+                                 'missing_funding': built['missing']}
 
     # Pooled statistics (normalized errors).
     e_err_har, h_err = [], []
@@ -525,17 +517,17 @@ def run_derivatives_volatility(load_candles: Callable[[str, str], List[Candle]],
         gate['verdict_meaning'] = VERDICT_MEANING[gate['verdict']]
 
     return {
-        'kind': 'derivatives_volatility',
+        'kind': 'derivatives_volatility_f01',
         'configuration': config.asdict(),
         'model': {
-            'form': 'HAR + linear derivatives extension (OLS on raw range)',
+            'form': 'HAR + linear funding extension (OLS on raw range)',
             'features': FEATURE_NAMES,
             'feature_descriptions': FEATURE_DESCRIPTIONS,
             'min_history': MIN_HISTORY,
             'refit_every': REFIT_EVERY,
-            'alignment_rule': 'last settled/observed derivative value with '
-                              'timestamp <= prediction time; missing -> skip '
-                              '(no forward-fill, no interpolation)',
+            'alignment_rule': 'funding features use settled rates with '
+                              'funding_time <= prediction timestamp over a 24h '
+                              'window; missing/stale -> skip (no forward-fill)',
         },
         'target': {
             'primary': '(high_{t+1} - low_{t+1}) / close_t',
@@ -547,7 +539,7 @@ def run_derivatives_volatility(load_candles: Callable[[str, str], List[Candle]],
             'note': 'never re-tuned; from volatility_baselines.har_forecast',
         },
         'statistical_methodology': {
-            'primary_comparison': 'derivatives extension vs HAR (normalized errors)',
+            'primary_comparison': 'funding extension vs HAR (normalized errors)',
             'dm': 'two-sided Diebold-Mariano, Newey-West HAC variance',
             'bootstrap': 'circular block bootstrap 95% CI',
             'wilcoxon': 'Wilcoxon signed-rank (robustness)',
@@ -567,6 +559,7 @@ def run_derivatives_volatility(load_candles: Callable[[str, str], List[Candle]],
         'success_gate': gate,
         'notes': [
             'statistical significance is NOT trading profitability',
+            'funding-only F-01: no OI, no basis, no liquidations',
             'no hyperparameter search, no feature selection, no tuning',
             'frozen single-asset HAR methodology is unchanged',
             'daily windows are supplementary and excluded from the gate',

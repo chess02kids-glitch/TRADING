@@ -33,10 +33,12 @@
   ambiguous)**. Corrected run (commit `ae3dd2f`): pooled cross-vs-HAR normalized
   DM statistic = 2.2262, p = 0.0260 (HAR wins); C1/C2/C3/C7 true, C4/C5/C6
   false. Cross-asset family **CLOSED** per pre-registered STOP rule.
-- Phase 8 (derivatives positioning): IMPLEMENTED — funding (last settled),
-  open-interest 22-bar log change, basis (mark/spot − 1) as a linear HAR
-  extension vs frozen HAR, point-in-time alignment with staleness bounds and
-  no forward-fill, pre-registered C1–C7 gate; real run pending derivative data
+- Phase 8 (F-01, funding-only): IMPLEMENTED — the preregistered experiment is
+  funding-only. Exactly two derived covariates (`funding_mean_24h`,
+  `abs_funding_mean_24h` from settled Binance USD-M funding rates) as a linear
+  HAR extension vs frozen HAR, point-in-time (funding_time ≤ prediction
+  timestamp, 24h window, 8h staleness → skip, no forward-fill), pre-registered
+  C1–C7 gate. No open interest, no basis/premium. Real run pending funding data
   availability on the target machine (`docs/DERIVATIVES_METHODOLOGY.md`)
 
 ## Environment
@@ -300,7 +302,7 @@ The evaluator logic was validated here with a deterministic test double
 - window selection + documented timestamps;
 - CLI requires the real model (no mock fallback).
 
-Full suite: **236 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
+Full suite: **237 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
 that require the model; warning = pre-existing `PytestReturnNotNoneWarning`).
 
 ### To run the real-data robustness matrix on the target machine
@@ -325,7 +327,7 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 
 ## Testing
 
-- Full suite: `236 passed, 3 skipped, 1 warning`
+- Full suite: `237 passed, 3 skipped, 1 warning`
 - Phase 2 audit: `7 passed`
 - Offline system: `3 passed`
 - Historical-range regression: `14 passed`
@@ -338,7 +340,7 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 - Phase 5c audit (DM labels + c6 gate): `11 passed`
 - Phase 6 (ML vs HAR): `16 passed`
 - Phase 7 (cross-asset): `18 passed`
-- Phase 8 (derivatives): `18 passed`
+- Phase 8 (F-01 funding-only): `19 passed`
 
 ## Safety
 
@@ -732,16 +734,18 @@ evidence that BTC↔ETH information improves next-candle volatility beyond the
 frozen single-asset HAR. **The cross-asset family is closed** (no more cross
 features, no more assets, no nonlinear ML, no tuning).
 
-**Phase 8 — DERIVATIVES / POSITIONING (implemented):** funding rate (last
-settled, `funding_time ≤ t`), open-interest 22-bar log change, and basis
-(`mark/spot − 1`), as a linear HAR extension under the frozen HAR benchmark and
-the pre-registered C1–C7 gate (PASS = all 7 · B = C1 only · C = C1 false).
-Data: public Binance USD-M market-data endpoints only (no key, no trading).
-Point-in-time alignment with staleness bounds (missing required observation →
-skip; no forward-fill; no interpolation). See
-`docs/DERIVATIVES_METHODOLOGY.md`. **Real run pending** derivative data
-availability on the target machine; STOP rule pre-registered (B/C closes the
-derivatives family).
+**Phase 8 — F-01 FUNDING-ONLY (implemented):** the preregistered experiment is
+funding-only. Exactly two derived covariates — `funding_mean_24h` and
+`abs_funding_mean_24h` from settled Binance USD-M funding rates (`funding_time
+≤ t`, 24h window, 8h staleness → skip) — added linearly to the frozen HAR
+(`β0 + β1·range_{t-1} + β2·mean5 + β3·mean22 + γ1·funding_mean_24h +
+γ2·abs_funding_mean_24h`), expanding past-only OLS. No open interest, no
+basis/premium, no liquidations. Pre-registered C1–C7 gate (PASS = all 7 ·
+B = C1 only · C = C1 false). Data: public Binance USD-M `fundingRate` endpoint
+only (no key, no trading); point-in-time with staleness bounds, no
+forward-fill, no interpolation. See `docs/DERIVATIVES_METHODOLOGY.md`.
+**Real run pending** funding-data availability on the target machine; STOP rule
+pre-registered (B/C closes the derivatives family).
 
 No trading strategy, no profitability claims, no hyperparameter search, and no
 tuning on the OOS windows are performed. The frozen Phase 4/5/5b/5c reports are

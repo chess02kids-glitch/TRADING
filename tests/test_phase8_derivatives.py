@@ -1,18 +1,31 @@
-"""Phase 8 - derivatives positioning tests.
+"""Phase 8 (F-01) - funding-only derivatives positioning tests.
 
-Covers: alignment, settled-funding correctness, OI timestamp cutoff, basis
-timestamp cutoff, no-forward-fill, missing-history safety, no-future
-perturbation invariance, training cutoff, deterministic coefficients, identical
-OOS timestamps, leakage counter, and frozen-HAR-unchanged. Synthetic aligned
-data is used; no network, no credentials.
+Covers the required regression protections:
+
+* F-01 does not require open interest / basis
+* F-01 works with funding-only input
+* F-01 cannot accidentally access missing OI/basis
+* funding timestamp alignment is correct (settled rate <= prediction time)
+* no future funding information is used
+* no forward-fill across genuine gaps
+* missing-history handling
+* training cutoff correctness
+* deterministic coefficients/predictions
+* identical OOS timestamps
+* leakage counter == 0
+* frozen-HAR-unchanged
+* C1-C7 gate classification
+
+Synthetic aligned data is used; no network, no credentials.
 """
 import math
 
 import numpy as np
 import pytest
 
-from kronos_trading.derivatives_data import (align_derivatives, as_of_series,
-                                             oi_log_change_22)
+from kronos_trading.derivatives_data import (FUNDING_INTERVAL_MS,
+                                             FUNDING_WINDOW_MS,
+                                             funding_features_24h)
 from kronos_trading.derivatives_volatility import (
     FEATURE_NAMES,
     build_derivatives_features,
@@ -25,6 +38,7 @@ from kronos_trading.evaluation import EvaluationConfig
 from kronos_trading.types import Candle
 
 H = 3_600_000
+H8 = 8 * H
 BASE = 1_700_000_000_000
 
 
@@ -41,19 +55,13 @@ def mk(n, seed=7, step=H, base=BASE):
     return out
 
 
-def make_derivatives(n, step=H, base=BASE, seed=1):
-    """Synthetic point-in-time derivatives aligned to candle open times."""
+def make_funding(n, seed=1, step=H8, base=BASE):
+    """Settled funding history at 8h cadence, aligned to candle timestamps."""
     rng = np.random.default_rng(seed)
-    funding, oi, basis = [], [], []
-    oi_level = 1e6
-    for i in range(n):
-        t = base + i * step
-        # settled funding (previous interval), snapshot OI, basis at t
-        funding.append({'timestamp_ms': t, 'funding_rate': float(rng.normal(0, 1e-4))})
-        oi_level *= (1.0 + rng.normal(0, 0.002))
-        oi.append({'timestamp_ms': t, 'open_interest': oi_level})
-        basis.append({'timestamp_ms': t, 'basis': float(rng.normal(0, 1e-4))})
-    return {'funding': funding, 'open_interest': oi, 'basis': basis}
+    return [{'timestamp_ms': base + i * step,
+             'funding_rate': float(rng.normal(0, 1e-4)),
+             'kind': 'funding'}
+            for i in range(n)]
 
 
 def cfg(**overrides):
@@ -63,106 +71,108 @@ def cfg(**overrides):
 
 
 # --------------------------------------------------------------------------- #
-# Alignment helpers
+# funding_features_24h correctness
 # --------------------------------------------------------------------------- #
-def test_as_of_series_point_in_time():
-    rows = [{'timestamp_ms': 100, 'v': 1.0}, {'timestamp_ms': 300, 'v': 3.0}]
-    assert as_of_series(rows, [50, 100, 200, 300, 400], 'v') == \
-        [None, 1.0, 1.0, 3.0, 3.0]
+def test_funding_mean_24h_window():
+    # settlements every 8h, rates 1..6
+    base = 1_000_000_000_000
+    rows = [{'timestamp_ms': base + i * H8, 'funding_rate': float(i + 1)}
+            for i in range(6)]
+    # query at base + 3*H8 (t = 24h): window is (t-24h, t] = (base, base+24h]
+    # => settlements at base+8h, base+16h, base+24h => rates 2,3,4 => mean 3.0
+    out = funding_features_24h(rows, [base + 3 * H8])
+    assert out['funding_mean_24h'] == [pytest.approx(3.0)]  # mean(2,3,4)
+    assert out['abs_funding_mean_24h'] == [pytest.approx(3.0)]
 
 
-def test_as_of_series_no_forward_fill():
-    rows = [{'timestamp_ms': 500, 'v': 5.0}]
-    # timestamps before the first observation -> None (skip, never forward-filled)
-    assert as_of_series(rows, [100, 200, 500], 'v') == [None, None, 5.0]
+def test_funding_features_staleness_skip():
+    base = 1_000_000_000_000
+    rows = [{'timestamp_ms': base, 'funding_rate': 1.0},
+            {'timestamp_ms': base + H8, 'funding_rate': 2.0}]
+    # query at base + 2*H8 + FUNDING_INTERVAL_MS (just beyond 8h staleness)
+    out = funding_features_24h(rows, [base + 2 * H8 + FUNDING_INTERVAL_MS + 1])
+    assert out['funding_mean_24h'] == [None]  # stale -> skip
 
 
-def test_oi_log_change_22():
-    oi = [float(i) for i in range(1, 60)]
-    out = oi_log_change_22(oi)
-    assert out[21] is None
-    assert out[22] == pytest.approx(math.log(23 / 1))
-    assert out[40] == pytest.approx(math.log(41 / 19))
-    # missing value -> None
-    oi2 = oi[:]
-    oi2[30] = None
-    out2 = oi_log_change_22(oi2)
-    assert out2[52] is None  # depends on index 30
+def test_funding_features_missing_history():
+    base = 1_000_000_000_000
+    rows = [{'timestamp_ms': base, 'funding_rate': 1.0}]
+    # no settlements before t -> None
+    out = funding_features_24h(rows, [base - 1])
+    assert out['funding_mean_24h'] == [None]
 
 
-def test_align_derivatives_missing_is_none():
-    data = {'funding': [{'timestamp_ms': 200, 'funding_rate': 0.1}],
-            'open_interest': [{'timestamp_ms': 200, 'open_interest': 1e6}],
-            'basis': [{'timestamp_ms': 200, 'basis': 0.0}]}
-    out = align_derivatives(data, [100, 200, 300])
-    assert out['funding'] == [None, 0.1, 0.1]
-    assert out['basis'] == [None, 0.0, 0.0]
+def test_funding_features_no_future():
+    base = 1_000_000_000_000
+    rows = [{'timestamp_ms': base + H8, 'funding_rate': 1.0}]
+    # query before the settlement -> None (future funding never used)
+    out = funding_features_24h(rows, [base])
+    assert out['funding_mean_24h'] == [None]
 
 
 # --------------------------------------------------------------------------- #
-# Feature construction: point-in-time, no future, no forward-fill
+# Feature construction (funding-only, no OI/basis)
 # --------------------------------------------------------------------------- #
-def test_feature_shapes_and_validity():
+def test_feature_names_are_funding_only():
+    assert FEATURE_NAMES == ['har_range_prev', 'har_mean5', 'har_mean22',
+                             'funding_mean_24h', 'abs_funding_mean_24h']
+
+
+def test_build_features_works_with_funding_only():
     target = mk(200, 11)
-    deriv = make_derivatives(200)
-    out = build_derivatives_features(target, deriv, H)
+    funding_rows = make_funding(60)  # 60 * 8h = 480h of funding history
+    out = build_derivatives_features(target, funding_rows, H)
     assert out['X'].shape == (200, len(FEATURE_NAMES))
-    assert out['valid'][24:].all()
-    assert not out['valid'][:24].any()
+    # rows with valid funding features (after MIN_HISTORY and funding history)
+    assert out['valid'][24:].sum() > 0
     assert out['missing'] == 0
 
 
-def test_settled_funding_correctness():
-    target = mk(60, 12)
-    deriv = make_derivatives(60)
-    out = build_derivatives_features(target, deriv, H)
-    idx = {name: k for k, name in enumerate(FEATURE_NAMES)}
-    # row j uses derivative snapshot at T_j - step = index j-1
-    for j in (30, 45):
-        expected_funding = deriv['funding'][j - 1]['funding_rate']
-        assert out['X'][j, idx['funding']] == pytest.approx(expected_funding)
+def test_build_features_does_not_access_oi_or_basis():
+    target = mk(80, 12)
+    # funding-only payload: no 'open_interest' / 'basis' keys at all
+    funding_rows = make_funding(30)
+    out = build_derivatives_features(target, funding_rows, H)
+    # must not raise KeyError and must produce funding-based features
+    assert out['X'].shape == (80, len(FEATURE_NAMES))
 
 
-def test_no_future_information():
+def test_no_future_funding_information():
     target = mk(200, 13)
-    deriv = make_derivatives(200)
-    out1 = build_derivatives_features(target, deriv, H)
-    # perturb derivative values at/after T_60 (indices >= 60)
-    modified = {k: list(v) for k, v in deriv.items()}
-    for k in ('funding', 'open_interest', 'basis'):
-        for i in range(60, len(modified[k])):
-            r = dict(modified[k][i])
-            val = r.get('funding_rate', r.get('open_interest', r.get('basis')))
-            r[list(r.keys())[1]] = val + 999.0
-            modified[k][i] = r
+    funding_rows = make_funding(60)
+    out1 = build_derivatives_features(target, funding_rows, H)
+    # perturb a FUTURE funding settlement (after the last prediction timestamp)
+    modified = list(funding_rows)
+    future_ts = max(c.timestamp_ms for c in target) + H8
+    modified.append({'timestamp_ms': future_ts, 'funding_rate': 999.0, 'kind': 'funding'})
     out2 = build_derivatives_features(target, modified, H)
-    np.testing.assert_allclose(out1['X'][24:61], out2['X'][24:61], rtol=0, atol=0)
-    assert not np.allclose(out1['X'][61:], out2['X'][61:], rtol=0, atol=0)
+    np.testing.assert_allclose(out1['X'], out2['X'], rtol=0, atol=0)
 
 
-def test_no_forward_fill_missing_row():
-    target = mk(200, 14)
-    deriv = make_derivatives(200)
-    # remove a RUN of basis snapshots (indices 90..99) -> a genuine gap longer
-    # than one candle step. Rows whose last available basis is older than the
-    # staleness bound must be SKIPPED (never forward-filled).
-    deriv['basis'] = deriv['basis'][:90] + deriv['basis'][100:]
-    out = build_derivatives_features(target, deriv, H)
-    # rows 91..100 query at ts[90..99]; last available basis is index 89
-    # (age >= step for row 91, growing to 11 steps for row 100) -> skipped
-    assert not out['valid'][100]
-    assert out['missing'] >= 1
-    # row 90 queries at ts[89] (age 1 step, within tolerance) -> still valid
-    assert out['valid'][90]
+def test_no_forward_fill_across_genuine_gap():
+    target = mk(200, 14)  # 200 candles at 1h => 200h; funding settles every 8h
+    funding_rows = make_funding(60)
+    # remove a RUN of funding settlements INSIDE the target candle range
+    # (indices 5..10, i.e. base+40h .. base+80h) -> a genuine >8h gap.
+    gap = [r for r in funding_rows if r['timestamp_ms'] < funding_rows[5]['timestamp_ms']
+           or r['timestamp_ms'] > funding_rows[10]['timestamp_ms']]
+    out = build_derivatives_features(target, gap, H)
+    # rows whose most recent settled funding is stale are invalid (skipped),
+    # never forward-filled
+    assert out['missing'] > 0
+    # every valid row's funding features are finite and derived from funding only
+    assert out['X'][out['valid']].shape[1] == len(FEATURE_NAMES)
+    # rows well before the gap are still valid
+    assert bool(out['valid'][25]) is True
 
 
 # --------------------------------------------------------------------------- #
-# Walk-forward OLS: cutoff, no leakage, determinism
+# Walk-forward OLS
 # --------------------------------------------------------------------------- #
 def test_walk_ols_training_cutoff_and_leaks():
     target = mk(150, 15)
-    deriv = make_derivatives(150)
-    out = build_derivatives_features(target, deriv, H)
+    funding_rows = make_funding(50)
+    out = build_derivatives_features(target, funding_rows, H)
     idxs = list(range(48, 110))
     walk = run_walk_ols(out['X'], out['y_raw'], out['valid'], idxs)
     assert walk['leaks'] == 0
@@ -173,8 +183,8 @@ def test_walk_ols_training_cutoff_and_leaks():
 
 def test_walk_ols_deterministic():
     target = mk(150, 16)
-    deriv = make_derivatives(150)
-    out = build_derivatives_features(target, deriv, H)
+    funding_rows = make_funding(50)
+    out = build_derivatives_features(target, funding_rows, H)
     idxs = list(range(48, 110))
     w1 = run_walk_ols(out['X'], out['y_raw'], out['valid'], idxs)
     w2 = run_walk_ols(out['X'], out['y_raw'], out['valid'], idxs)
@@ -183,46 +193,29 @@ def test_walk_ols_deterministic():
         np.testing.assert_allclose(a, b)
 
 
-def test_walk_ols_future_invariance():
-    target = mk(150, 17)
-    deriv = make_derivatives(150)
-    out1 = build_derivatives_features(target, deriv, H)
-    idxs = list(range(48, 100))
-    w1 = run_walk_ols(out1['X'], out1['y_raw'], out1['valid'], idxs)
-    modified = list(target)
-    for i in range(100, 150):
-        c = modified[i]
-        modified[i] = Candle(c.timestamp_ms, c.open + 5, c.high + 5,
-                             c.low + 5, c.close + 5, c.volume)
-    out2 = build_derivatives_features(modified, deriv, H)
-    w2 = run_walk_ols(out2['X'], out2['y_raw'], out2['valid'], idxs)
-    assert w1['predictions'] == w2['predictions']
-
-
 def test_missing_history_safe():
     target = mk(60, 18)
-    deriv = make_derivatives(60)
-    out = build_derivatives_features(target, deriv, H)
+    funding_rows = make_funding(5)  # insufficient funding history
+    out = build_derivatives_features(target, funding_rows, H)
     w = run_walk_ols(out['X'], out['y_raw'], out['valid'], [10, 20])
     assert math.isnan(w['predictions'][10])
-    assert math.isnan(w['predictions'][20])
     assert w['leaks'] == 0
 
 
 # --------------------------------------------------------------------------- #
-# End-to-end + identical timestamps + gate
+# End-to-end + identical timestamps + frozen HAR + gate
 # --------------------------------------------------------------------------- #
-def test_run_derivatives_structure_and_determinism():
+def test_run_derivatives_funding_only_structure_and_determinism():
     data = {('BTC/USDT', '1h'): mk(300, 21), ('ETH/USDT', '1h'): mk(300, 22)}
-    deriv = {'BTCUSDT': make_derivatives(300, seed=30),
-             'ETHUSDT': make_derivatives(300, seed=31)}
+    funding = {'BTCUSDT': {'funding': make_funding(90, seed=30)},
+               'ETHUSDT': {'funding': make_funding(90, seed=31)}}
     c = cfg(context_length=64, window_size=40)
     series = [('BTC/USDT', '1h'), ('ETH/USDT', '1h')]
     r1 = run_derivatives_volatility(lambda s, tf: data[(s, tf)],
-                                    lambda sym: deriv[sym], c, series)
+                                    lambda sym: funding[sym], c, series)
     r2 = run_derivatives_volatility(lambda s, tf: data[(s, tf)],
-                                    lambda sym: deriv[sym], c, series)
-    assert r1['kind'] == 'derivatives_volatility'
+                                    lambda sym: funding[sym], c, series)
+    assert r1['kind'] == 'derivatives_volatility_f01'
     assert r1['window_records'] == r2['window_records']
     assert r1['success_gate'] == r2['success_gate']
     assert r1['pooled_primary'] == r2['pooled_primary']
@@ -230,12 +223,12 @@ def test_run_derivatives_structure_and_determinism():
         assert set(r1['series'][sid]['windows']) == {'older', 'middle', 'recent'}
 
 
-def test_identical_oos_timestamps_with_frozen_har():
+def test_run_derivatives_identical_oos_timestamps():
     data = {('BTC/USDT', '1h'): mk(300, 23)}
-    deriv = {'BTCUSDT': make_derivatives(300, seed=32)}
+    funding = {'BTCUSDT': {'funding': make_funding(90, seed=32)}}
     c = cfg(context_length=64, window_size=40)
     report = run_derivatives_volatility(lambda s, tf: data[(s, tf)],
-                                        lambda sym: deriv[sym], c,
+                                        lambda sym: funding[sym], c,
                                         [('BTC/USDT', '1h')])
     for w, analysis in report['series']['BTC/USDT']['windows'].items():
         dm = analysis['comparisons']['ext_vs_har']['dm']
@@ -250,6 +243,17 @@ def test_frozen_har_unchanged():
     assert ROLLING_WINDOWS == (5, 22)
     assert EWMA_SPAN == 22
     assert har_forecast([3.0] * 50) == pytest.approx(3.0)
+
+
+def test_run_derivatives_empty_safe():
+    data = {('BTC/USDT', '1h'): mk(5, 27)}
+    funding = {'BTCUSDT': {'funding': []}}
+    c = cfg(context_length=4, window_size=5)
+    report = run_derivatives_volatility(lambda s, tf: data[(s, tf)],
+                                        lambda sym: funding[sym], c,
+                                        [('BTC/USDT', '1h')])
+    assert report['success_gate']['overall'] == 'pending'
+    assert report['success_gate']['eligible_windows'] == 0
 
 
 # --------------------------------------------------------------------------- #

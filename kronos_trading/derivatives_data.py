@@ -1,28 +1,25 @@
-"""Phase 8 - public Binance USD-M derivatives data acquisition (read-only).
+"""Phase 8 (F-01) - public Binance USD-M funding-rate acquisition (read-only).
 
-Fetches the three pre-registered derivatives features for the frozen HAR
-experiment, using ONLY public market-data endpoints (no API key, no trading,
-no order endpoints):
+The pre-registered Phase 8 experiment is FUNDING-ONLY. It uses exactly two
+external features derived from the settled perpetual funding rate:
 
-1. ``funding_t``  - last SETTLED perpetual funding rate (funding_time <= t)
-                   via ``GET /fapi/v1/fundingRate``.
-2. ``oi_chg22_t`` - 22-bar log change in aggregate open interest via
-                   ``GET /futures/data/openInterestHist``.
-3. ``basis_t``    - perpetual basis/premium = mark_price / spot_index - 1 via
-                   ``GET /fapi/v1/premiumIndex``.
+    funding_mean_24h     = mean of settled funding rates in (t-24h, t]
+    abs_funding_mean_24h = mean of |funding rate| in (t-24h, t]
 
-Every row is stamped with the exchange timestamp at which the value was
-actually available. This module only stores/aligns data; it never computes a
-forecast and never mutates the verified OHLCV dataset.
+Nothing else (no open interest, no basis/premium, no liquidations, no
+long/short ratios). This module acquires and aligns funding data using ONLY
+public market-data endpoints (no API key, no trading, no order endpoints).
+
+The open-interest and premium-index fetchers below are retained as FUTURE
+utilities only; they are never called by the F-01 execution path.
 """
 from __future__ import annotations
 
 import json
 import time
+from bisect import bisect_right
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
-
-from .types import Candle
+from typing import Any, Dict, List, Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DERIVATIVES_DIR = PROJECT_ROOT / "data" / "derivatives"
@@ -30,9 +27,14 @@ DERIVATIVES_DIR = PROJECT_ROOT / "data" / "derivatives"
 # Binance USD-M public market-data REST base (no auth).
 FAPI_BASE = "https://fapi.binance.com"
 
+# Funding settles every 8 hours on Binance USD-M perpetuals. A settled rate
+# older than one funding interval at prediction time is a genuine gap (skip).
+FUNDING_INTERVAL_MS = 8 * 3600 * 1000
+FUNDING_WINDOW_MS = 24 * 3600 * 1000  # 24-hour funding window for F-01 features
+
 
 class DerivativesDataError(RuntimeError):
-    """Raised when derivatives data cannot be acquired or aligned safely."""
+    """Raised when funding data cannot be acquired or aligned safely."""
 
 
 def _http_get(url: str, params: Dict[str, Any], timeout: int = 20) -> Any:
@@ -62,28 +64,31 @@ def fetch_funding_rate(symbol: str = "BTCUSDT", start_ms: int = 0,
     return out
 
 
+def fetch_funding_only(symbol: str, start_ms: int) -> Dict[str, List[Dict[str, Any]]]:
+    """F-01 data acquisition: settled funding history only."""
+    return {"funding": fetch_funding_rate(symbol, start_ms)}
+
+
+# --------------------------------------------------------------------------- #
+# FUTURE utilities (NOT used by the funding-only F-01 experiment)
+# --------------------------------------------------------------------------- #
 def fetch_open_interest(symbol: str = "BTCUSDT", period: str = "1h",
                         start_ms: int = 0, limit: int = 500) -> List[Dict[str, Any]]:
-    """Aggregate open-interest history. Each row: timestamp, sumOpenInterest(Value)."""
+    """[future] Aggregate open-interest history. Not used by F-01."""
     rows = _http_get(FAPI_BASE + "/futures/data/openInterestHist",
                      {"symbol": symbol, "period": period,
                       "startTime": start_ms, "limit": limit})
-    out = []
-    for r in rows:
-        out.append({
-            "timestamp_ms": int(r["timestamp"]),
-            "open_interest": float(r["sumOpenInterest"]),
-            "kind": "open_interest",
-        })
-    return out
+    return [{"timestamp_ms": int(r["timestamp"]),
+             "open_interest": float(r["sumOpenInterest"]),
+             "kind": "open_interest"} for r in rows]
 
 
 def fetch_premium_index(symbol: str = "BTCUSDT") -> List[Dict[str, Any]]:
-    """Current premium index (mark price vs index). Point-in-time snapshot."""
+    """[future] Premium index snapshot (mark vs index). Not used by F-01."""
     rows = _http_get(FAPI_BASE + "/fapi/v1/premiumIndex", {"symbol": symbol})
     for r in rows:
         return [{
-            "timestamp_ms": int(time.time() * 1000),  # fetched now
+            "timestamp_ms": int(time.time() * 1000),
             "mark_price": float(r["markPrice"]),
             "index_price": float(r["indexPrice"]),
             "basis": float(r["markPrice"]) / float(r["indexPrice"]) - 1.0,
@@ -92,19 +97,12 @@ def fetch_premium_index(symbol: str = "BTCUSDT") -> List[Dict[str, Any]]:
     return []
 
 
-def fetch_derivatives(symbol: str = "BTCUSDT", period: str = "1h",
-                      start_ms: int = 0) -> Dict[str, List[Dict[str, Any]]]:
-    """Fetch all three derivatives series for one USD-M symbol."""
-    return {
-        "funding": fetch_funding_rate(symbol, start_ms),
-        "open_interest": fetch_open_interest(symbol, period, start_ms),
-        "basis": fetch_premium_index(symbol),
-    }
-
-
+# --------------------------------------------------------------------------- #
+# Storage
+# --------------------------------------------------------------------------- #
 def save_derivatives(symbol: str, data: Dict[str, List[Dict[str, Any]]],
                      directory: Optional[Path] = None) -> Path:
-    """Persist fetched derivatives data as JSON (gitignored under data/derivatives)."""
+    """Persist fetched funding data as JSON (gitignored under data/derivatives)."""
     d = directory or DERIVATIVES_DIR
     d.mkdir(parents=True, exist_ok=True)
     path = d / ("%s_derivatives.json" % symbol)
@@ -113,83 +111,65 @@ def save_derivatives(symbol: str, data: Dict[str, List[Dict[str, Any]]],
     return path
 
 
-def load_derivatives(symbol: str, directory: Optional[Path] = None) -> Dict[str, List[Dict[str, Any]]]:
+def load_derivatives(symbol: str,
+                     directory: Optional[Path] = None) -> Dict[str, List[Dict[str, Any]]]:
+    """Load persisted funding data for one symbol (funding-only payload)."""
     d = directory or DERIVATIVES_DIR
     path = d / ("%s_derivatives.json" % symbol)
     if not path.exists():
         raise DerivativesDataError(
-            "derivatives data for %s not present at %s (run --fetch first)"
+            "funding data for %s not present at %s (run --fetch first)"
             % (symbol, path))
     with open(path) as f:
         return json.load(f)
 
 
 # --------------------------------------------------------------------------- #
-# Point-in-time alignment
+# F-01 feature derivation (point-in-time, no forward-fill)
 # --------------------------------------------------------------------------- #
-def as_of_series(rows: List[Dict[str, Any]], timestamps: List[int],
-                 value_key: str,
-                 max_staleness_ms: Optional[int] = None) -> List[Optional[float]]:
-    """Return the most recent value with ``timestamp_ms <= t`` for each t.
+def funding_features_24h(funding_rows: List[Dict[str, Any]],
+                         query_timestamps: List[int],
+                         window_ms: int = FUNDING_WINDOW_MS,
+                         max_staleness_ms: int = FUNDING_INTERVAL_MS
+                         ) -> Dict[str, List[Optional[float]]]:
+    """Compute funding_mean_24h and abs_funding_mean_24h for each query time t.
 
-    No forward-fill across a missing required observation: if the most recent
-    observation is older than ``max_staleness_ms`` before ``t`` (a genuine gap),
-    the value is None (a skip). With ``max_staleness_ms=None``, the last
-    observation <= t is used (correct for a natively coarse but complete series).
-    Future observations are never used.
+    Point-in-time rules (no future, no forward-fill, no interpolation):
+
+    * uses only settled funding rates with ``funding_time <= t``;
+    * the window is ``(t - window_ms, t]`` (24 hours);
+    * if the most recent settled rate is older than ``max_staleness_ms`` before
+      ``t`` (a missing settlement), the value is None (skip);
+    * if there are no settled rates in the window, the value is None (skip).
+
+    Returns ``{'funding_mean_24h': [...], 'abs_funding_mean_24h': [...]}`` with
+    None for skipped timestamps.
     """
-    sorted_rows = sorted(rows, key=lambda r: r["timestamp_ms"])
-    ts_arr = [r["timestamp_ms"] for r in sorted_rows]
-    val_arr = [r[value_key] for r in sorted_rows]
-    out: List[Optional[float]] = []
-    idx = 0
-    for t in timestamps:
-        while idx < len(ts_arr) and ts_arr[idx] <= t:
-            idx += 1
-        if idx == 0:
-            out.append(None)
+    rows = sorted(funding_rows, key=lambda r: r["timestamp_ms"])
+    ts_arr = [r["timestamp_ms"] for r in rows]
+    rate_arr = [float(r["funding_rate"]) for r in rows]
+
+    mean_out: List[Optional[float]] = []
+    abs_out: List[Optional[float]] = []
+    for t in query_timestamps:
+        j = bisect_right(ts_arr, t)  # first index with ts > t
+        if j == 0:
+            mean_out.append(None)
+            abs_out.append(None)
             continue
-        src_ts = ts_arr[idx - 1]
-        if max_staleness_ms is not None and (t - src_ts) > max_staleness_ms:
-            out.append(None)  # genuine gap: do not forward-fill a stale value
-        else:
-            out.append(val_arr[idx - 1])
-    return out
+        last_settled = ts_arr[j - 1]
+        if t - last_settled > max_staleness_ms:
+            # genuine gap: a settlement is missing -> skip, do not forward-fill
+            mean_out.append(None)
+            abs_out.append(None)
+            continue
+        lo = bisect_right(ts_arr, t - window_ms)  # first index with ts > t-window
+        window_rates = rate_arr[lo:j]
+        if not window_rates:
+            mean_out.append(None)
+            abs_out.append(None)
+            continue
+        mean_out.append(sum(window_rates) / len(window_rates))
+        abs_out.append(sum(abs(r) for r in window_rates) / len(window_rates))
 
-
-def align_derivatives(data: Dict[str, List[Dict[str, Any]]],
-                      timestamps: List[int],
-                      max_staleness_ms: Optional[Dict[str, int]] = None
-                      ) -> Dict[str, List[Optional[float]]]:
-    """Align funding / open-interest / basis to query timestamps (point-in-time).
-
-    ``funding`` = last settled rate with fundingTime <= t (staleness bounded by
-    the funding interval: a missing settled interval is a skip).
-    ``open_interest`` / ``basis`` = last snapshot with timestamp <= t, bounded
-    by their observation cadence (a missing snapshot is a skip, never
-    forward-filled).
-    """
-    s = max_staleness_ms or {}
-    return {
-        "funding": as_of_series(data["funding"], timestamps, "funding_rate",
-                                s.get("funding")),
-        "open_interest": as_of_series(data["open_interest"], timestamps,
-                                      "open_interest", s.get("open_interest")),
-        "basis": as_of_series(data["basis"], timestamps, "basis", s.get("basis")),
-    }
-
-
-def oi_log_change_22(oi: List[Optional[float]]) -> List[Optional[float]]:
-    """22-bar log change of open interest: log(OI_t / OI_{t-22}).
-
-    Returns None where either value is missing (never interpolated).
-    """
-    import math
-    out: List[Optional[float]] = [None] * len(oi)
-    for t in range(22, len(oi)):
-        a, b = oi[t], oi[t - 22]
-        if a is None or b is None or a <= 0 or b <= 0:
-            out[t] = None
-        else:
-            out[t] = math.log(a / b)
-    return out
+    return {"funding_mean_24h": mean_out, "abs_funding_mean_24h": abs_out}
