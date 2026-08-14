@@ -10,8 +10,8 @@
 - Supabase migration: COMPLETE
 - SQLite ↔ Supabase parity: PASS
 - Phase 3: PASS — real Kronos inference verified on the RTX 3050
-- Phase 4: IMPLEMENTED — chronological evaluator built and tested; real-data
-  evaluation **pending execution on the target machine**
+- Phase 4: 1h baseline comparison DONE (negative for Kronos); robustness
+  matrix (4h/1d + multi-window + statistics) IMPLEMENTED, pending execution
 
 ## Environment
 
@@ -55,23 +55,42 @@ Key components: `kronos_trading/model.py` (`ModelManager`,
 
 ## Phase 4 — Chronological No-Lookahead Evaluation
 
-### Status: IMPLEMENTED — real-data run done; baseline comparison pending
+### Status: 1h baseline comparison DONE; robustness (4h/1d + multi-window + stats) IMPLEMENTED, pending execution
 
-The evaluator is fully implemented, unit-tested, and has now run on the real
-verified dataset on the target machine. The naive-baseline comparison is
-implemented but has **not yet been executed**, so no baseline-vs-Kronos
-conclusion is drawn yet. Phase 4 will be marked **PASS** only after the
-baseline comparison has actually run.
+The evaluator ran on the real verified dataset for BTC/USDT 1h and ETH/USDT 1h
+with the naive baselines. The robustness/generalization phase (4h, 1d, three
+chronological windows, and paired statistical tests) is fully implemented and
+unit-tested but has **not yet been executed** on the target machine, so the
+final generalization verdict is not yet determined.
 
-### Reported real-data results (target machine, Kronos only)
+### Real-data results so far (target machine)
 
-- BTC/USDT 1h — 1000 predictions, MAE close 164.03, RMSE close 226.53,
-  MAPE close 0.002564, directional accuracy 0.3786, return correlation 0.0268.
-- ETH/USDT 1h — 1000 predictions, MAE close 6.5228, RMSE close 9.1811,
-  MAPE close 0.003511, directional accuracy 0.4103, return correlation −0.0068.
+**BTC/USDT 1h** (1000 predictions):
 
-These are Kronos-only figures; they say nothing yet about whether Kronos beats
-trivial baselines, which is the purpose of the comparison below.
+| metric | Kronos | persistence | previous-direction |
+|---|---|---|---|
+| MAE close | 164.0275 | **135.2848** | 200.1951 |
+| RMSE close | 226.5340 | *(lower)* | *(higher)* |
+| MAPE close | 0.002564 | *(lower)* | *(higher)* |
+| directional accuracy | 37.86% | 0% (flat by policy) | **38.24%** |
+| return correlation | 0.0268 | — | — |
+
+**ETH/USDT 1h** (1000 predictions):
+
+| metric | Kronos | persistence | previous-direction |
+|---|---|---|---|
+| MAE close | 6.5228 | **5.2629** | 7.8907 |
+| RMSE close | 9.1811 | *(lower)* | *(higher)* |
+| MAPE close | 0.003511 | *(lower)* | *(higher)* |
+| directional accuracy | **41.03%** | 0% (flat by policy) | 38.93% |
+| return correlation | −0.0068 | — | — |
+
+**Reading (preliminary, 1h only):** Kronos loses to persistence on close
+MAE/RMSE/MAPE and return-error metrics on both assets. Kronos beats
+previous-direction on most ETH error/direction metrics but does not beat it on
+BTC direction. The 1h evidence does **not** establish useful incremental
+predictive value — but this is one timeframe; generalization to 4h/1d and
+across windows is exactly what the robustness phase (below) is for.
 
 ### What was built
 
@@ -128,6 +147,48 @@ last close; previous-direction uses only the previous/current closed candles;
 baselines never inspect future candles; identical timestamps across systems;
 identical flat-direction threshold; persistence never scores direction; safe
 empty/zero-variance handling; explicit deltas and winner labels.
+
+### Robustness / generalization (multi-window + statistics)
+
+Added to support the generalization phase **without changing** the model,
+revision, context (512), deterministic recipe, threshold (0.0005), baselines,
+or no-lookahead rules:
+
+- `kronos_trading/evaluation.py`
+  - `define_windows()` — fixed chronological, non-overlapping windows
+    (`older` / `middle` / `recent`) placed purely as a function of the data,
+    never selected on performance. When data volume is insufficient, each
+    window is shrunk to `n_targets // 3` (reported via
+    `reduced_due_to_volume`); with very few targets, fewer windows are
+    produced (`windows_omitted`).
+  - `PredictionEvaluator.evaluate_windows()` — runs the *same* evaluator over
+    each window; the recent window is identical to the single `evaluate()` run.
+  - Each report now also carries `window` and `statistical_comparison`.
+- `kronos_trading/statistics_compare.py` — self-contained paired statistics
+  (numpy only, deterministic seed):
+  - paired absolute close error: mean/median diff, Cohen's d_z, percentile
+    bootstrap 95% CI, and a Wilcoxon signed-rank test (normal approximation
+    with tie correction; zero differences dropped; caveat noted for n < 20);
+  - paired directional outcome: accuracy delta, bootstrap 95% CI, and
+    McNemar's test (exact binomial for < 25 discordant pairs, else
+    continuity-corrected chi-square);
+  - every test is paired on identical `prediction_timestamp`s; statistical
+    significance is explicitly labelled as *not* trading profitability.
+- `kronos_trading/robustness.py` — `run_robustness()` + consolidated report:
+  per series × window metrics, `baseline_results`, `model_comparison`, and
+  `statistical_comparison`; a `summary` of where Kronos wins/loses each metric
+  across windows (with a `consistent_across_windows` flag); and an
+  `across_all_series` roll-up.
+- CLI `robustness` — `python -m kronos_trading.cli robustness --db
+  data\db\kronos_trading_verified.db --assets BTC/USDT ETH/USDT --timeframes
+  1h 4h 1d --window-size 1000` loads the model once and produces
+  `data/eval/robustness_report.json`.
+
+`tests/test_phase4_robustness.py` — 20 tests: window placement/non-overlap,
+volume-based window shrinking, few-target fallback, recent-window equivalence,
+chronological disjointness, identical timestamps per system, paired-test
+correctness (bootstrap/wilcoxon/McNemar), identical-observation alignment,
+empty/zero-variance safety, and deterministic repeatability of windows + stats.
 
 ### Evaluation methodology
 
@@ -213,19 +274,22 @@ The evaluator logic was validated here with a deterministic test double
 - window selection + documented timestamps;
 - CLI requires the real model (no mock fallback).
 
-Full suite: **91 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
+Full suite: **111 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
 that require the model; warning = pre-existing `PytestReturnNotNoneWarning`).
 
-### To run the real-data baseline comparison on the target machine
+### To run the real-data robustness matrix on the target machine
 
 ```bash
-# The evaluate command now emits baseline_results + model_comparison in its
-# JSON report (and saves per-row baseline records alongside the Kronos rows).
-python -m kronos_trading.cli evaluate \
-  --db data\db\kronos_trading_verified.db --symbol BTC/USDT --timeframe 1h
+# 4h + 1d + multi-window + paired statistics in one consolidated report.
+# Uses the same model/revision/context/threshold/deterministic recipe as the
+# 1h evaluation - nothing is tuned.
+python -m kronos_trading.cli robustness \
+  --db data\db\kronos_trading_verified.db \
+  --assets BTC/USDT ETH/USDT --timeframes 1h 4h 1d --window-size 1000
 
+# Single-series windowed evaluation (one symbol/timeframe)
 python -m kronos_trading.cli evaluate \
-  --db data\db\kronos_trading_verified.db --symbol ETH/USDT --timeframe 1h
+  --db data\db\kronos_trading_verified.db --symbol BTC/USDT --timeframe 4h
 
 # Tests (real-weight tests un-skip when the model is present)
 pytest -q
@@ -235,12 +299,12 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 
 ## Testing
 
-- Full suite: `91 passed, 3 skipped, 1 warning`
+- Full suite: `111 passed, 3 skipped, 1 warning`
 - Phase 2 audit: `7 passed`
 - Offline system: `3 passed`
 - Historical-range regression: `14 passed`
 - Phase 3: `22 passed, 2 skipped`
-- Phase 4: `27 passed, 1 skipped` (skip = real-weight test)
+- Phase 4: `47 passed, 1 skipped` (skip = real-weight test)
 
 ## Safety
 
@@ -251,11 +315,24 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 - Kronos upstream source untouched (pinned `67b630e67f6a`)
 - Verified SQLite database and Supabase data unchanged (read-only access)
 
+## Phase 4 verdict (preliminary)
+
+**D. Evaluation invalid/incomplete** — the robustness evaluation is *incomplete*.
+
+The 1h baseline comparison is complete and is **negative for Kronos** (loses to
+persistence on error metrics on both assets; does not beat previous-direction
+on BTC direction). But the generalization phase — 4h, 1d, three chronological
+windows, and paired statistical tests — has not been executed, so a robust A/B/C
+determination cannot yet be made. Once `kronos_trading.cli robustness` has run
+on the verified dataset, the verdict can be assigned from the consolidated
+report.
+
 ## Next Phase
 
-Phase 5+ (strategy/signals, paper research) remain blocked until the Phase 4
-baseline comparison has actually run on the verified dataset and the verdict
-(Kronos vs trivial baselines) is recorded. Phase 4 evaluates the model only —
-no strategy, no trading thresholds, no profitability claims. The reported
-Kronos directional accuracies (0.379 / 0.410) are below 50% but cannot be
-interpreted without the baseline comparison, which is the next step.
+Phase 5+ (strategy/signals) remain blocked: build Phase 5 only if the final
+robustness verdict is **A** (robust added value) or **B** (mixed/inconclusive).
+If it is **C** (robustly no added value), investigate alternative model /
+timeframe / data formulations first. The 1h-only evidence currently points
+toward C; the robustness matrix will confirm or contradict that across
+timeframes and windows. No tuning, no window cherry-picking, and no
+profitability claims are made.

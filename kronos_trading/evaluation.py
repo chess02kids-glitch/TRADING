@@ -89,6 +89,8 @@ class EvaluationConfig:
     start_ms: Optional[int] = None
     end_ms: Optional[int] = None
     max_predictions: int = 1000
+    # Robustness windows: targets per chronological window (recent/middle/older).
+    window_size: int = 1000
     # Evaluation boundary. None -> the newest candle is treated as forming.
     as_of_ms: Optional[int] = None
 
@@ -101,9 +103,83 @@ class EvaluationConfig:
             raise ValueError('direction_threshold must be >= 0')
         if self.max_predictions < 1:
             raise ValueError('max_predictions must be >= 1')
+        if self.window_size < 1:
+            raise ValueError('window_size must be >= 1')
 
     def asdict(self) -> Dict[str, Any]:
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class WindowSpec:
+    """One chronological evaluation window (indices into the target range)."""
+    name: str
+    start: int  # inclusive, 0 = oldest target position
+    end: int    # inclusive
+
+
+def define_windows(n_targets: int, window_size: int,
+                   min_windows: int = 3) -> "tuple[List[WindowSpec], Dict[str, Any]]":
+    """Define fixed, chronological, non-overlapping evaluation windows.
+
+    Window placement is a fixed function of the available target count and the
+    requested size - it never depends on prediction performance:
+
+    * ``older``  = the first ``per`` target positions,
+    * ``middle`` = ``per`` positions centred on the middle of the range,
+    * ``recent`` = the last ``per`` target positions.
+
+    When the data does not contain ``min_windows * window_size`` targets, each
+    window is shrunk to ``n_targets // min_windows`` (reported via
+    ``reduced_due_to_volume``). With fewer than ``min_windows`` targets, fewer
+    windows are produced (``windows_omitted`` reports the shortfall).
+    """
+    info = {
+        'n_targets': int(n_targets),
+        'windows_requested': int(min_windows),
+        'window_size_requested': int(window_size),
+        'window_size_effective': None,
+        'windows_produced': 0,
+        'windows_omitted': 0,
+        'reduced_due_to_volume': False,
+        'note': None,
+    }
+    if n_targets < 1 or window_size < 1 or min_windows < 1:
+        info['note'] = 'no target positions available'
+        return [], info
+
+    k = min(min_windows, n_targets)
+    per = min(window_size, n_targets // k)
+    if per < 1:
+        per = 1
+        k = 1
+
+    names = {3: ['older', 'middle', 'recent'], 2: ['older', 'recent'], 1: ['recent']}[k]
+    specs: List[WindowSpec] = []
+    for idx, name in enumerate(names):
+        if k == 3:
+            if idx == 0:
+                start = 0
+            elif idx == 1:
+                start = n_targets // 2 - per // 2
+            else:
+                start = n_targets - per
+        elif k == 2:
+            start = 0 if idx == 0 else n_targets - per
+        else:
+            start = n_targets - per
+        start = max(0, min(start, n_targets - per))
+        specs.append(WindowSpec(name, start, start + per - 1))
+
+    info.update({
+        'window_size_effective': per,
+        'windows_produced': k,
+        'windows_omitted': min_windows - k,
+        'reduced_due_to_volume': per < window_size,
+        'note': ('window size reduced from %d to %d to fit %d non-overlapping '
+                 'windows' % (window_size, per, k)) if per < window_size else None,
+    })
+    return specs, info
 
 
 @dataclass
@@ -456,25 +532,26 @@ class PredictionEvaluator:
                 raise ValueError('invalid target OHLC relationship')
 
     # ------------------------------------------------------------- evaluate --
+    def _closed_data(self, candles: List[Candle]) -> List[Candle]:
+        """Sorted, closed-candle view of the data (forming candle excluded)."""
+        data = sorted(candles, key=lambda c: c.timestamp_ms)
+        return self._closed(data)
+
+    def _target_bounds(self, closed: List[Candle]):
+        """(first_valid, last_valid) target indices into ``closed``."""
+        n = len(closed)
+        return self.config.context_length, n - self.config.horizon
+
     def evaluate(self, candles: List[Candle]) -> EvaluationResult:
         cfg = self.config
         tf = self.tf_ms
 
-        # Sort defensively (no fabrication); duplicates are detected downstream.
-        data = sorted(candles, key=lambda c: c.timestamp_ms)
-        closed = self._closed(data)
+        closed = self._closed_data(candles)
         n = len(closed)
 
-        first_valid = cfg.context_length          # context_length candles before target
-        last_valid = n - cfg.horizon              # last index whose target window exists
-        rows: List[EvaluationRow] = []
-        persistence_rows: List[EvaluationRow] = []
-        previous_direction_rows: List[EvaluationRow] = []
-        skips: Dict[str, int] = {}
-
+        first_valid, last_valid = self._target_bounds(closed)
         if n == 0 or last_valid < first_valid:
-            return self._result(rows, persistence_rows, previous_direction_rows,
-                                skips, closed, None, None)
+            return self._result([], [], [], {}, closed, None, None, window_label=None)
 
         # Choose the last target index (end of the holdout window).
         if cfg.end_ms is not None:
@@ -498,8 +575,19 @@ class PredictionEvaluator:
             first_target = max(first_valid, last_target - cfg.max_predictions + 1)
 
         if first_target > last_target:
-            return self._result(rows, persistence_rows, previous_direction_rows,
-                                skips, closed, None, None)
+            return self._result([], [], [], {}, closed, None, None, window_label=None)
+
+        return self._evaluate_index_window(closed, first_target, last_target,
+                                           window_label=None)
+
+    def _evaluate_index_window(self, closed: List[Candle], first_target: int,
+                               last_target: int,
+                               window_label: Optional[str]) -> EvaluationResult:
+        """Run the chronological walk over target indices [first_target, last_target]."""
+        rows: List[EvaluationRow] = []
+        persistence_rows: List[EvaluationRow] = []
+        previous_direction_rows: List[EvaluationRow] = []
+        skips: Dict[str, int] = {}
 
         for i in range(first_target, last_target + 1):
             outcome = self._evaluate_one(closed, i, skips)
@@ -511,14 +599,36 @@ class PredictionEvaluator:
                     previous_direction_rows.append(previous_direction_row)
 
         return self._result(rows, persistence_rows, previous_direction_rows,
-                            skips, closed, first_target, last_target)
+                            skips, closed, first_target, last_target,
+                            window_label=window_label)
+
+    def evaluate_windows(self, candles: List[Candle]):
+        """Run fixed chronological windows (recent/middle/older).
+
+        Returns ``(windows, window_info)`` where ``windows`` maps a window name
+        to its ``EvaluationResult``. Windows never overlap and never leak: each
+        is an independent chronological walk over its own target range.
+        """
+        closed = self._closed_data(candles)
+        first_valid, last_valid = self._target_bounds(closed)
+        n_targets = (last_valid - first_valid + 1) if last_valid >= first_valid else 0
+
+        specs, info = define_windows(n_targets, self.config.window_size)
+        windows: Dict[str, EvaluationResult] = {}
+        for spec in specs:
+            start = first_valid + spec.start
+            end = first_valid + spec.end
+            windows[spec.name] = self._evaluate_index_window(
+                closed, start, end, window_label=spec.name)
+        return windows, info
 
     def _result(self, rows: List[EvaluationRow],
                 persistence_rows: List[EvaluationRow],
                 previous_direction_rows: List[EvaluationRow],
                 skips: Dict[str, int],
                 closed: List[Candle],
-                first_target: Optional[int], last_target: Optional[int]) -> EvaluationResult:
+                first_target: Optional[int], last_target: Optional[int],
+                window_label: Optional[str]) -> EvaluationResult:
         cfg = self.config
         meta = self._meta()
 
@@ -537,9 +647,15 @@ class PredictionEvaluator:
         model_comparison = build_model_comparison(
             kronos_metrics, persistence_metrics, previous_direction_metrics)
 
+        from .statistics_compare import build_statistical_comparison  # local import
+        statistical_comparison = build_statistical_comparison(
+            rows, persistence_rows, previous_direction_rows,
+            cfg.direction_threshold)
+
         report = {
             'symbol': self.symbol,
             'timeframe': self.timeframe,
+            'window': window_label,
             **meta,
             'context_length': cfg.context_length,
             'horizon': cfg.horizon,
@@ -564,6 +680,7 @@ class PredictionEvaluator:
                 'previous_direction': previous_direction_metrics,
             },
             'model_comparison': model_comparison,
+            'statistical_comparison': statistical_comparison,
         }
         baseline_rows = {
             'persistence': persistence_rows,

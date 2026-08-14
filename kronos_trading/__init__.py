@@ -6,6 +6,8 @@ from .evaluation import (EvaluationConfig, EvaluationRow, EvaluationResult,
                          PredictionEvaluator, compute_metrics, run_evaluation)
 from .baselines import (persistence_prediction, previous_direction_prediction,
                         baseline_rows_for, build_model_comparison)
+from .robustness import (run_robustness, run_series_robustness,
+                         build_consolidated_report, summarize_windows)
 
 __all__ = [
     "ModelManager",
@@ -23,4 +25,8 @@ __all__ = [
     "previous_direction_prediction",
     "baseline_rows_for",
     "build_model_comparison",
+    "run_robustness",
+    "run_series_robustness",
+    "build_consolidated_report",
+    "summarize_windows",
 ]

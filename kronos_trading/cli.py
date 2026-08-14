@@ -18,6 +18,7 @@ from .pipeline import PredictionPipeline
 from .backtest import Backtester
 from .benchmark import measure_model_load, run_benchmark
 from .evaluation import (EvaluationConfig, PredictionEvaluator, parse_timestamp)
+from .robustness import run_robustness
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / 'data' / 'db' / 'kronos_trading_verified.db'
@@ -156,6 +157,28 @@ def main(argv=None):
     ev.add_argument('--include-rows', action='store_true',
                     help='also print per-prediction rows to stdout')
 
+    rb = sub.add_parser('robustness',
+                        help='multi-window generalization evaluation across series')
+    rb.add_argument('--db', default=str(DEFAULT_DB))
+    rb.add_argument('--assets', nargs='+', default=['BTC/USDT', 'ETH/USDT'])
+    rb.add_argument('--timeframes', nargs='+', default=['1h', '4h', '1d'])
+    rb.add_argument('--context', type=int, default=512)
+    rb.add_argument('--horizon', type=int, default=1)
+    rb.add_argument('--window-size', type=int, default=1000,
+                    help='targets per chronological window (recent/middle/older)')
+    rb.add_argument('--direction-threshold', type=float, default=0.0005)
+    rb.add_argument('--seed', type=int, default=0)
+    rb.add_argument('--no-deterministic', action='store_true')
+    rb.add_argument('--model', default='NeoQuasar/Kronos-small')
+    rb.add_argument('--tokenizer', default='NeoQuasar/Kronos-Tokenizer-base')
+    rb.add_argument('--model-revision', default=None)
+    rb.add_argument('--tokenizer-revision', default=None)
+    rb.add_argument('--device', default=None)
+    rb.add_argument('--max-context', type=int, default=512)
+    rb.add_argument('--cache-dir', default=None)
+    rb.add_argument('--output', default=None,
+                    help='JSON output path (default: data/eval/robustness_report.json)')
+
     args = p.parse_args(argv)
     try:
         if args.cmd == 'predict':
@@ -164,6 +187,8 @@ def main(argv=None):
             _backtest(args)
         elif args.cmd == 'benchmark':
             _benchmark(args)
+        elif args.cmd == 'robustness':
+            _robustness(args)
         else:
             _evaluate(args)
         return 0
@@ -259,6 +284,64 @@ def _evaluate(args):
             },
         }, f, indent=2, default=str)
     print('saved evaluation results to %s' % output, file=sys.stderr)
+
+
+def _robustness(args):
+    import time as _time
+    if args.no_deterministic:
+        print('warning: --no-deterministic disables the argmax recipe; '
+              'sampling is stochastic and results are NOT reproducible.',
+              file=sys.stderr)
+
+    manager = ModelManager(
+        model_name=args.model,
+        tokenizer_name=args.tokenizer,
+        model_revision=args.model_revision or None,
+        tokenizer_revision=args.tokenizer_revision or None,
+        device=args.device or None,
+        max_context=args.max_context,
+        cache_dir=args.cache_dir or None,
+    ).load()
+    if not manager.available:
+        raise ModelUnavailableError(
+            'real Kronos model is unavailable for robustness evaluation: %s'
+            % manager.error)
+
+    config = EvaluationConfig(
+        context_length=args.context,
+        horizon=args.horizon,
+        deterministic=not args.no_deterministic,
+        seed=args.seed,
+        direction_threshold=args.direction_threshold,
+        window_size=args.window_size,
+    )
+    if not config.deterministic:
+        config.top_k = 0
+        config.top_p = 0.9
+        config.sample_count = 1
+
+    series = [(s, tf) for s in args.assets for tf in args.timeframes]
+
+    def loader(symbol, timeframe):
+        return load_candles(args.db, symbol, timeframe)
+
+    report = run_robustness(KronosRealPredictor(manager), config, series, loader)
+
+    output = Path(args.output) if args.output else (
+        ROOT / 'data' / 'eval' / 'robustness_report.json')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with open(output, 'w') as f:
+        json.dump(report, f, indent=2, default=str)
+
+    # Human-readable summary to stdout.
+    print(json.dumps({'configuration': report['configuration'],
+                      'across_all_series': report['across_all_series'],
+                      'series': [{
+                          'symbol': s['symbol'], 'timeframe': s['timeframe'],
+                          'window_info': s['window_info'],
+                          'summary': s['summary'],
+                      } for s in report['series']]}, indent=2, default=str))
+    print('saved consolidated robustness report to %s' % output, file=sys.stderr)
 
 
 if __name__ == '__main__':
