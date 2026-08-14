@@ -55,13 +55,23 @@ Key components: `kronos_trading/model.py` (`ModelManager`,
 
 ## Phase 4 — Chronological No-Lookahead Evaluation
 
-### Status: IMPLEMENTED (real-data run pending)
+### Status: IMPLEMENTED — real-data run done; baseline comparison pending
 
-The evaluator is fully implemented and unit-tested. It has **not yet been run
-against the verified dataset on the target machine** (the Arena sandbox has no
-GPU, no model weights, and no verified DB), so no Phase 4 metrics are claimed
-yet. Phase 4 will be marked **PASS** only after the evaluation actually runs
-on the verified dataset.
+The evaluator is fully implemented, unit-tested, and has now run on the real
+verified dataset on the target machine. The naive-baseline comparison is
+implemented but has **not yet been executed**, so no baseline-vs-Kronos
+conclusion is drawn yet. Phase 4 will be marked **PASS** only after the
+baseline comparison has actually run.
+
+### Reported real-data results (target machine, Kronos only)
+
+- BTC/USDT 1h — 1000 predictions, MAE close 164.03, RMSE close 226.53,
+  MAPE close 0.002564, directional accuracy 0.3786, return correlation 0.0268.
+- ETH/USDT 1h — 1000 predictions, MAE close 6.5228, RMSE close 9.1811,
+  MAPE close 0.003511, directional accuracy 0.4103, return correlation −0.0068.
+
+These are Kronos-only figures; they say nothing yet about whether Kronos beats
+trivial baselines, which is the purpose of the comparison below.
 
 ### What was built
 
@@ -81,6 +91,43 @@ on the verified dataset.
   `--include-rows`. Defaults are safe and reproducible.
 - `tests/test_phase4.py` — 16 tests (no-lookahead, chronology, determinism,
   metrics, window selection, skip reasons, CLI gating).
+
+### Naive baselines (for fair comparison)
+
+Added `kronos_trading/baselines.py` with two deterministic, no-model baselines
+computed on exactly the same prediction timestamps as Kronos:
+
+1. **Persistence / random-walk** — `predicted_close = last observed close`,
+   `predicted_return = 0`. A flat prediction never scores direction, so its
+   directional accuracy is 0 by policy.
+2. **Previous-direction** — `previous_return = close[-1] / close[-2] - 1`;
+   predicts the same return (so `predicted_close = last_close × (1 +
+   previous_return)`) and predicts direction using the **same** flatness
+   threshold as Kronos (0.0005).
+
+Both baselines use only candles strictly before the prediction timestamp;
+open/high/low/volume are left undefined and excluded from the comparison.
+
+The report is extended with:
+
+- `baseline_results.persistence` / `baseline_results.previous_direction` — full
+  metric dictionaries computed with the *same* `compute_metrics` definitions;
+- `model_comparison` — per-metric deltas (`kronos − baseline`) and an explicit
+  `*_winner` label (`kronos` / `baseline` / `tie` / `null` when undefined):
+  - `kronos_vs_persistence`: `mae_close_delta`, `rmse_close_delta`,
+    `directional_accuracy_delta` (+ MAPE, return MAE/RMSE, correlation).
+  - `kronos_vs_previous_direction`: `directional_accuracy_delta`,
+    `return_correlation_delta` (+ MAE/RMSE/MAPE/return deltas).
+  - `prediction_count.same_timestamps` asserts all systems used identical
+    prediction timestamps.
+- No statistical significance test is performed; `*_winner` is descriptive only
+  (documented in the report's `note` field).
+
+`tests/test_phase4_baselines.py` — 11 tests proving: persistence uses only the
+last close; previous-direction uses only the previous/current closed candles;
+baselines never inspect future candles; identical timestamps across systems;
+identical flat-direction threshold; persistence never scores direction; safe
+empty/zero-variance handling; explicit deltas and winner labels.
 
 ### Evaluation methodology
 
@@ -166,25 +213,19 @@ The evaluator logic was validated here with a deterministic test double
 - window selection + documented timestamps;
 - CLI requires the real model (no mock fallback).
 
-Full suite: **80 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
+Full suite: **91 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
 that require the model; warning = pre-existing `PytestReturnNotNoneWarning`).
 
-### To run the real-data evaluation on the target machine
+### To run the real-data baseline comparison on the target machine
 
 ```bash
-# BTC/USDT 1h (default window: most recent 1000 closed targets)
+# The evaluate command now emits baseline_results + model_comparison in its
+# JSON report (and saves per-row baseline records alongside the Kronos rows).
 python -m kronos_trading.cli evaluate \
   --db data\db\kronos_trading_verified.db --symbol BTC/USDT --timeframe 1h
 
-# ETH/USDT 1h
 python -m kronos_trading.cli evaluate \
   --db data\db\kronos_trading_verified.db --symbol ETH/USDT --timeframe 1h
-
-# Optional: 4h and 1d series
-python -m kronos_trading.cli evaluate \
-  --db data\db\kronos_trading_verified.db --symbol BTC/USDT --timeframe 4h
-python -m kronos_trading.cli evaluate \
-  --db data\db\kronos_trading_verified.db --symbol ETH/USDT --timeframe 1d
 
 # Tests (real-weight tests un-skip when the model is present)
 pytest -q
@@ -194,12 +235,12 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 
 ## Testing
 
-- Full suite: `80 passed, 3 skipped, 1 warning`
+- Full suite: `91 passed, 3 skipped, 1 warning`
 - Phase 2 audit: `7 passed`
 - Offline system: `3 passed`
 - Historical-range regression: `14 passed`
 - Phase 3: `22 passed, 2 skipped`
-- Phase 4: `16 passed, 1 skipped` (skip = real-weight test)
+- Phase 4: `27 passed, 1 skipped` (skip = real-weight test)
 
 ## Safety
 
@@ -213,6 +254,8 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 ## Next Phase
 
 Phase 5+ (strategy/signals, paper research) remain blocked until the Phase 4
-chronological evaluation has actually run on the verified dataset and its
-metrics are recorded (the commands above). Phase 4 evaluates the model only —
-no strategy, no trading thresholds, no profitability claims.
+baseline comparison has actually run on the verified dataset and the verdict
+(Kronos vs trivial baselines) is recorded. Phase 4 evaluates the model only —
+no strategy, no trading thresholds, no profitability claims. The reported
+Kronos directional accuracies (0.379 / 0.410) are below 50% but cannot be
+interpreted without the baseline comparison, which is the next step.

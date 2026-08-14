@@ -108,18 +108,23 @@ class EvaluationConfig:
 
 @dataclass
 class EvaluationRow:
-    """One prediction vs actual outcome, with the evaluation configuration."""
+    """One prediction vs actual outcome, with the evaluation configuration.
+
+    ``predicted_open/high/low/volume`` are ``Optional`` because naive baselines
+    predict only close and return (those fields are ``None`` for baselines and
+    excluded from the comparison metrics).
+    """
     symbol: str
     timeframe: str
     context_end_timestamp: int
     prediction_timestamp: int
     actual_timestamp: int
     context_length: int
-    predicted_open: float
-    predicted_high: float
-    predicted_low: float
+    predicted_open: Optional[float]
+    predicted_high: Optional[float]
+    predicted_low: Optional[float]
     predicted_close: float
-    predicted_volume: float
+    predicted_volume: Optional[float]
     actual_open: float
     actual_high: float
     actual_low: float
@@ -150,6 +155,11 @@ def _mean(xs: List[float]) -> Optional[float]:
     return statistics.fmean(xs) if xs else None
 
 
+def _valid_pairs(a, b):
+    """Pairwise values where both sides are defined (skip None predictions)."""
+    return [(x, y) for x, y in zip(a, b) if x is not None and y is not None]
+
+
 def _mae(a: List[float], b: List[float]) -> Optional[float]:
     if not a:
         return None
@@ -160,6 +170,21 @@ def _rmse(a: List[float], b: List[float]) -> Optional[float]:
     if not a:
         return None
     return math.sqrt(statistics.fmean([(x - y) ** 2 for x, y in zip(a, b)]))
+
+
+def _mae_pairs(a, b) -> Optional[float]:
+    """MAE over rows where both predicted and actual are defined."""
+    pairs = _valid_pairs(a, b)
+    if not pairs:
+        return None
+    return statistics.fmean([abs(x - y) for x, y in pairs])
+
+
+def _rmse_pairs(a, b) -> Optional[float]:
+    pairs = _valid_pairs(a, b)
+    if not pairs:
+        return None
+    return math.sqrt(statistics.fmean([(x - y) ** 2 for x, y in pairs]))
 
 
 def _pearson(a: List[float], b: List[float]) -> Optional[float]:
@@ -218,15 +243,16 @@ def compute_metrics(rows: List[EvaluationRow], direction_threshold: float) -> Di
     al = [r.actual_low for r in rows]
     av = [r.actual_volume for r in rows]
 
-    m['mae_close'] = _mae(pc, ac)
-    m['rmse_close'] = _rmse(pc, ac)
-    m['mae_open'] = _mae(po, ao)
-    m['mae_high'] = _mae(ph, ah)
-    m['mae_low'] = _mae(pl, al)
-    m['mae_volume'] = _mae(pv, av)
+    m['mae_close'] = _mae_pairs(pc, ac)
+    m['rmse_close'] = _rmse_pairs(pc, ac)
+    m['mae_open'] = _mae_pairs(po, ao)
+    m['mae_high'] = _mae_pairs(ph, ah)
+    m['mae_low'] = _mae_pairs(pl, al)
+    m['mae_volume'] = _mae_pairs(pv, av)
 
-    # MAPE only where mathematically valid (|actual_close| > 0).
-    mape = [abs(p - a) / abs(a) for p, a in zip(pc, ac) if abs(a) > 1e-12]
+    # MAPE only where mathematically valid (|actual_close| > 0) and where the
+    # prediction is defined.
+    mape = [abs(p - a) / abs(a) for p, a in _valid_pairs(pc, ac) if abs(a) > 1e-12]
     m['mape_close'] = _mean(mape) if mape else None
     m['mape_close_valid_count'] = len(mape)
 
@@ -265,9 +291,10 @@ def compute_metrics(rows: List[EvaluationRow], direction_threshold: float) -> Di
 
 @dataclass
 class EvaluationResult:
-    """Report + rows + skip accounting for one series evaluation."""
+    """Report + rows + baseline rows + skip accounting for one series."""
     report: Dict[str, Any] = field(default_factory=dict)
     rows: List[EvaluationRow] = field(default_factory=list)
+    baseline_rows: Dict[str, List[EvaluationRow]] = field(default_factory=dict)
     skip_reasons: Dict[str, int] = field(default_factory=dict)
     skipped: int = 0
 
@@ -312,7 +339,14 @@ class PredictionEvaluator:
 
     # ------------------------------------------------------------ one target --
     def _evaluate_one(self, closed: List[Candle], i: int,
-                      skips: Dict[str, int]) -> Optional[EvaluationRow]:
+                      skips: Dict[str, int]):
+        """Evaluate one target candle.
+
+        Returns ``(kronos_row, persistence_row, previous_direction_row)`` or
+        ``None`` when the step is skipped. The baseline rows are derived from
+        the *same* validated context and target as the Kronos row, so they
+        share identical prediction timestamps and never see the future.
+        """
         cfg = self.config
         tf = self.tf_ms
 
@@ -365,7 +399,7 @@ class PredictionEvaluator:
         act_dir = direction(act_ret, cfg.direction_threshold)
 
         meta = self._meta()
-        return EvaluationRow(
+        kronos_row = EvaluationRow(
             symbol=self.symbol,
             timeframe=self.timeframe,
             context_end_timestamp=ctx[-1].timestamp_ms,
@@ -400,6 +434,13 @@ class PredictionEvaluator:
             direction_threshold=cfg.direction_threshold,
         )
 
+        # Naive baselines on the SAME timestamps (derived from ctx, which ends
+        # strictly before the target - no future access).
+        from .baselines import baseline_rows_for  # local import avoids a cycle
+        persistence_row, previous_direction_row = baseline_rows_for(
+            kronos_row, ctx, cfg.direction_threshold)
+        return kronos_row, persistence_row, previous_direction_row
+
     @staticmethod
     def _validate_target(targets: List[Candle]) -> None:
         for c in targets:
@@ -427,10 +468,13 @@ class PredictionEvaluator:
         first_valid = cfg.context_length          # context_length candles before target
         last_valid = n - cfg.horizon              # last index whose target window exists
         rows: List[EvaluationRow] = []
+        persistence_rows: List[EvaluationRow] = []
+        previous_direction_rows: List[EvaluationRow] = []
         skips: Dict[str, int] = {}
 
         if n == 0 or last_valid < first_valid:
-            return self._result(rows, skips, closed, None, None)
+            return self._result(rows, persistence_rows, previous_direction_rows,
+                                skips, closed, None, None)
 
         # Choose the last target index (end of the holdout window).
         if cfg.end_ms is not None:
@@ -454,16 +498,25 @@ class PredictionEvaluator:
             first_target = max(first_valid, last_target - cfg.max_predictions + 1)
 
         if first_target > last_target:
-            return self._result(rows, skips, closed, None, None)
+            return self._result(rows, persistence_rows, previous_direction_rows,
+                                skips, closed, None, None)
 
         for i in range(first_target, last_target + 1):
-            row = self._evaluate_one(closed, i, skips)
-            if row is not None:
-                rows.append(row)
+            outcome = self._evaluate_one(closed, i, skips)
+            if outcome is not None:
+                kronos_row, persistence_row, previous_direction_row = outcome
+                rows.append(kronos_row)
+                persistence_rows.append(persistence_row)
+                if previous_direction_row is not None:
+                    previous_direction_rows.append(previous_direction_row)
 
-        return self._result(rows, skips, closed, first_target, last_target)
+        return self._result(rows, persistence_rows, previous_direction_rows,
+                            skips, closed, first_target, last_target)
 
-    def _result(self, rows: List[EvaluationRow], skips: Dict[str, int],
+    def _result(self, rows: List[EvaluationRow],
+                persistence_rows: List[EvaluationRow],
+                previous_direction_rows: List[EvaluationRow],
+                skips: Dict[str, int],
                 closed: List[Candle],
                 first_target: Optional[int], last_target: Optional[int]) -> EvaluationResult:
         cfg = self.config
@@ -474,6 +527,15 @@ class PredictionEvaluator:
         eval_start = closed[first_target].timestamp_ms if first_target is not None else None
         eval_end = (closed[last_target + cfg.horizon - 1].timestamp_ms + self.tf_ms
                     if last_target is not None else None)
+
+        kronos_metrics = compute_metrics(rows, cfg.direction_threshold)
+        persistence_metrics = compute_metrics(persistence_rows, cfg.direction_threshold)
+        previous_direction_metrics = compute_metrics(previous_direction_rows,
+                                                     cfg.direction_threshold)
+
+        from .baselines import build_model_comparison  # local import avoids a cycle
+        model_comparison = build_model_comparison(
+            kronos_metrics, persistence_metrics, previous_direction_metrics)
 
         report = {
             'symbol': self.symbol,
@@ -496,10 +558,21 @@ class PredictionEvaluator:
             'predictions': len(rows),
             'skipped': sum(skips.values()),
             'skip_reasons': dict(skips),
-            'metrics': compute_metrics(rows, cfg.direction_threshold),
+            'metrics': kronos_metrics,
+            'baseline_results': {
+                'persistence': persistence_metrics,
+                'previous_direction': previous_direction_metrics,
+            },
+            'model_comparison': model_comparison,
+        }
+        baseline_rows = {
+            'persistence': persistence_rows,
+            'previous_direction': previous_direction_rows,
         }
         return EvaluationResult(report=report, rows=rows,
-                                skip_reasons=dict(skips), skipped=sum(skips.values()))
+                                baseline_rows=baseline_rows,
+                                skip_reasons=dict(skips),
+                                skipped=sum(skips.values()))
 
 
 def run_evaluation(predictor, config: EvaluationConfig, symbol: str, timeframe: str,

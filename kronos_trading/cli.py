@@ -250,9 +250,14 @@ def _evaluate(args):
                             or int(_time.time() * 1000))))
     output.parent.mkdir(parents=True, exist_ok=True)
     with open(output, 'w') as f:
-        json.dump({'report': result.report,
-                   'rows': [r.asdict() for r in result.rows]}, f, indent=2,
-                  default=str)
+        json.dump({
+            'report': result.report,
+            'rows': [r.asdict() for r in result.rows],
+            'baseline_rows': {
+                'persistence': [r.asdict() for r in result.baseline_rows.get('persistence', [])],
+                'previous_direction': [r.asdict() for r in result.baseline_rows.get('previous_direction', [])],
+            },
+        }, f, indent=2, default=str)
     print('saved evaluation results to %s' % output, file=sys.stderr)
 
 

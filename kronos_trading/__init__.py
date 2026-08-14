@@ -4,6 +4,8 @@ from .model import (ModelManager, KronosRealPredictor, ModelUnavailableError,
 from .pipeline import PredictionPipeline
 from .evaluation import (EvaluationConfig, EvaluationRow, EvaluationResult,
                          PredictionEvaluator, compute_metrics, run_evaluation)
+from .baselines import (persistence_prediction, previous_direction_prediction,
+                        baseline_rows_for, build_model_comparison)
 
 __all__ = [
     "ModelManager",
@@ -17,4 +19,8 @@ __all__ = [
     "PredictionEvaluator",
     "compute_metrics",
     "run_evaluation",
+    "persistence_prediction",
+    "previous_direction_prediction",
+    "baseline_rows_for",
+    "build_model_comparison",
 ]
