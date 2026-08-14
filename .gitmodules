@@ -1,0 +1,3 @@
+[submodule "Kronos"]
+	path = Kronos
+	url = https://github.com/shiyu-coder/Kronos.git
