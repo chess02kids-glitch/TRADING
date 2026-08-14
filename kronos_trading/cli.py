@@ -28,6 +28,9 @@ from .classical_volatility import (run_classical_volatility_benchmark,
                                    recompute_classical_summary)
 from .ml_volatility import run_ml_vs_har
 from .cross_asset import run_cross_asset
+from .derivatives_volatility import run_derivatives_volatility
+from .derivatives_data import (fetch_derivatives, save_derivatives,
+                               load_derivatives)
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / 'data' / 'db' / 'kronos_trading_verified.db'
@@ -300,6 +303,21 @@ def main(argv=None):
                     help='JSON output path (default: '
                          'data/eval/cross_asset_volatility_report.json)')
 
+    dv = sub.add_parser('derivatives-volatility',
+                        help='Phase 8: derivatives positioning (funding/OI/basis) '
+                             'vs frozen HAR, linear extension')
+    dv.add_argument('--db', default=str(DEFAULT_DB))
+    dv.add_argument('--assets', nargs='+', default=['BTC/USDT', 'ETH/USDT'])
+    dv.add_argument('--timeframes', nargs='+', default=['1h', '4h', '1d'])
+    dv.add_argument('--context', type=int, default=512)
+    dv.add_argument('--window-size', type=int, default=1000)
+    dv.add_argument('--fetch', action='store_true',
+                    help='fetch public Binance USD-M derivatives data first '
+                         '(funding / open interest / premium index; no API key)')
+    dv.add_argument('--output', default=None,
+                    help='JSON output path (default: '
+                         'data/eval/derivatives_volatility_report.json)')
+
     args = p.parse_args(argv)
     try:
         if args.cmd == 'predict':
@@ -324,6 +342,8 @@ def main(argv=None):
             _ml_vs_har(args)
         elif args.cmd == 'cross-asset':
             _cross_asset(args)
+        elif args.cmd == 'derivatives-volatility':
+            _derivatives_volatility(args)
         else:
             _evaluate(args)
         return 0
@@ -786,6 +806,66 @@ def _cross_asset(args):
         'success_gate': report['success_gate'],
     }, indent=2, default=str))
     print('saved cross-asset report to %s' % output, file=sys.stderr)
+    return 0
+
+
+def _derivatives_volatility(args):
+    config = EvaluationConfig(
+        context_length=args.context,
+        horizon=1,
+        deterministic=True,
+        seed=0,
+        direction_threshold=0.0005,
+        window_size=args.window_size,
+    )
+    assets = list(dict.fromkeys(args.assets))  # dedupe, preserve order
+    series = [(a, tf) for a in assets for tf in args.timeframes]
+
+    def symbol_of(asset):
+        return asset.replace('/', '')
+
+    if args.fetch:
+        import time as _time
+        now_ms = int(_time.time() * 1000)
+        # funding history ~ 2 years back (8h cadence => ~2200 rows/2y)
+        start_ms = now_ms - 730 * 86400000
+        for a in assets:
+            sym = symbol_of(a)
+            data = fetch_derivatives(sym, period='1h', start_ms=start_ms)
+            path = save_derivatives(sym, data)
+            print('fetched derivatives for %s -> %s (funding=%d, oi=%d, basis=%d)'
+                  % (sym, path, len(data['funding']), len(data['open_interest']),
+                     len(data['basis'])), file=sys.stderr)
+
+    def loader(symbol, timeframe):
+        return load_candles(args.db, symbol, timeframe)
+
+    def deriv_loader(symbol):
+        return load_derivatives(symbol)
+
+    report = run_derivatives_volatility(loader, deriv_loader, config, series)
+
+    output = Path(args.output) if args.output else (
+        ROOT / 'data' / 'eval' / 'derivatives_volatility_report.json')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with open(output, 'w') as f:
+        json.dump(report, f, indent=2, default=str)
+
+    print(json.dumps({
+        'kind': report['kind'],
+        'configuration': report['configuration'],
+        'model': report['model'],
+        'target': report['target'],
+        'frozen_baseline': report['frozen_baseline'],
+        'window_records': report['window_records'],
+        'pooled_primary': report['pooled_primary'],
+        'extreme_sensitivity_dm_trimmed': report['extreme_sensitivity_dm_trimmed'],
+        'regime_pooled': report['regime_pooled'],
+        'per_asset_summary': report['per_asset_summary'],
+        'ext_adequacy': report['ext_adequacy'],
+        'success_gate': report['success_gate'],
+    }, indent=2, default=str))
+    print('saved derivatives-volatility report to %s' % output, file=sys.stderr)
     return 0
 
 

@@ -1,12 +1,17 @@
 # Next Research Branch — New Information, Not New Architectures
 
-**Date:** 2026-08-14 · **Status:** DESIGNED → IMPLEMENTED (Phase 7 cross-asset experiment)
+**Date:** 2026-08-14 · **Status:** DESIGNED → IMPLEMENTED → REAL-RUN VERIFIED
+(Phase 7 cross-asset experiment)
 
-> Update: the cross-asset experiment designed below has been implemented as
-> Phase 7 (`kronos_trading/cross_asset.py`, CLI `cross-asset`). The precise
-> feature definitions, C1–C7 gate and STOP conditions are specified in
-> `docs/CROSS_ASSET_METHODOLOGY.md`. The real-data run is pending on the
-> verified dataset.
+> Phase 7 (cross-asset) was implemented (`kronos_trading/cross_asset.py`, CLI
+> `cross-asset`) and REAL-RUN VERIFIED on the verified dataset. **Verdict B —
+> weak / ambiguous cross-asset benefit** (corrected run at commit `ae3dd2f`;
+> pooled cross-vs-HAR normalized DM statistic = 2.2262, p = 0.0260, HAR wins;
+> C1/C2/C3/C7 true, C4/C5/C6 false). The pre-registered STOP rule was applied:
+> the cross-asset family is **closed**. The earlier pre-`ae3dd2f` Phase 7 result
+> is stale and must not be quoted. The next information class is
+> **derivatives / positioning** (funding, open interest, basis) — see
+> `docs/DERIVATIVES_METHODOLOGY.md`.
 
 The OHLCV-only model-complexity branch is CLOSED (see
 `docs/FINAL_OHLCV_RESEARCH_CONCLUSION.md`). The next scientific question is
@@ -120,6 +125,25 @@ the same family. The next step would then be the next-ranked information class
   gate classification.
 - `SYSTEM_STATUS.md`: Phase 7 recorded.
 
-The real-data experiment remains pending execution on the verified dataset:
-`python -m kronos_trading.cli cross-asset --db data\db\kronos_trading_verified.db
---assets BTC/USDT ETH/USDT --timeframes 1h 4h 1d --window-size 1000`.
+## Phase 7 real-data result (REAL-RUN VERIFIED, corrected)
+
+Command: `python -m kronos_trading.cli cross-asset --db
+data\db\kronos_trading_verified.db --assets BTC/USDT ETH/USDT --timeframes
+1h 4h 1d --window-size 1000`.
+
+- **Verdict B** — weak / ambiguous cross-asset benefit.
+- Pooled cross-vs-HAR normalized DM: statistic = 2.226175, p = 0.026002,
+  mean loss difference = +4.011e-05, **winner = HAR**.
+- Extreme-trimmed DM: statistic = 1.766429, p = 0.077324, winner = HAR.
+- Pooled regimes: low → cross wins; medium → HAR wins; high → HAR wins.
+- Leakage: `leaks = 0` everywhere.
+- Gate: C1/C2/C3/C7 true; C4/C5/C6 false; overall fail → verdict B.
+
+Interpretation: the cross-asset extension produces some window-level
+improvements, but there is no robust statistical evidence that BTC↔ETH
+information improves next-candle volatility beyond frozen single-asset HAR;
+the benefit does not survive raw-range breadth or regime breadth, and the
+pooled DM favors HAR.
+
+**STOP applied:** the cross-asset family is closed. Next information class:
+derivatives / positioning (funding rate, open interest, basis).

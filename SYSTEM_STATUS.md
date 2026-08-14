@@ -29,11 +29,15 @@
 - **OHLCV-only model-complexity branch: CLOSED** — HAR is the frozen champion;
   next branch is NEW INFORMATION (cross-asset), see
   `docs/NEXT_RESEARCH_BRANCH.md`.
-- Phase 7 (cross-asset information): IMPLEMENTED — HAR + linear cross-asset
-  extension (expanding past-only OLS, 4 other-asset features: normalized range
-  (own close), 22-bar realized vol of log returns, 1-bar and 22-bar log
-  returns) vs frozen HAR; pre-registered C1–C7 gate; real run pending on the
-  verified dataset (`docs/CROSS_ASSET_METHODOLOGY.md`)
+- Phase 7 (cross-asset information): **REAL-RUN VERIFIED — verdict B (weak /
+  ambiguous)**. Corrected run (commit `ae3dd2f`): pooled cross-vs-HAR normalized
+  DM statistic = 2.2262, p = 0.0260 (HAR wins); C1/C2/C3/C7 true, C4/C5/C6
+  false. Cross-asset family **CLOSED** per pre-registered STOP rule.
+- Phase 8 (derivatives positioning): IMPLEMENTED — funding (last settled),
+  open-interest 22-bar log change, basis (mark/spot − 1) as a linear HAR
+  extension vs frozen HAR, point-in-time alignment with staleness bounds and
+  no forward-fill, pre-registered C1–C7 gate; real run pending derivative data
+  availability on the target machine (`docs/DERIVATIVES_METHODOLOGY.md`)
 
 ## Environment
 
@@ -296,7 +300,7 @@ The evaluator logic was validated here with a deterministic test double
 - window selection + documented timestamps;
 - CLI requires the real model (no mock fallback).
 
-Full suite: **218 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
+Full suite: **236 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
 that require the model; warning = pre-existing `PytestReturnNotNoneWarning`).
 
 ### To run the real-data robustness matrix on the target machine
@@ -321,7 +325,7 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 
 ## Testing
 
-- Full suite: `218 passed, 3 skipped, 1 warning`
+- Full suite: `236 passed, 3 skipped, 1 warning`
 - Phase 2 audit: `7 passed`
 - Offline system: `3 passed`
 - Historical-range regression: `14 passed`
@@ -334,6 +338,7 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 - Phase 5c audit (DM labels + c6 gate): `11 passed`
 - Phase 6 (ML vs HAR): `16 passed`
 - Phase 7 (cross-asset): `18 passed`
+- Phase 8 (derivatives): `18 passed`
 
 ## Safety
 
@@ -718,19 +723,25 @@ factors) added to a HAR-linear extension, evaluated under the frozen HAR
 benchmark with strict timestamp alignment and no forward-fill. Ranking, design,
 gate and STOP conditions: `docs/NEXT_RESEARCH_BRANCH.md`.
 
-**Phase 7 (implemented):** this cross-asset experiment is now built
-(`kronos_trading/cross_asset.py`, CLI `cross-asset`). It adds exactly four
-other-asset features (previous normalized range, trailing 22-bar realized
-volatility, 1-bar return, 22-bar return) to the frozen HAR via expanding
-past-only OLS, refit every step, with strict `open time == T − step` alignment,
-no forward-fill, a leakage counter, and a pre-registered 7-criterion gate
-(PASS/B/C). The real-data run is pending:
+**Phase 7 (REAL-RUN VERIFIED, verdict B):** the corrected cross-asset
+experiment ran on the verified dataset. Result — pooled cross-vs-HAR normalized
+DM statistic = 2.2262, p = 0.0260 (HAR wins); extreme-trimmed DM p = 0.0773
+(HAR wins); low regime cross wins, medium/high HAR wins; `leaks = 0`; gate
+C1/C2/C3/C7 true, C4/C5/C6 false → **B**. There is no robust statistical
+evidence that BTC↔ETH information improves next-candle volatility beyond the
+frozen single-asset HAR. **The cross-asset family is closed** (no more cross
+features, no more assets, no nonlinear ML, no tuning).
 
-```bash
-python -m kronos_trading.cli cross-asset \
-  --db data\db\kronos_trading_verified.db \
-  --assets BTC/USDT ETH/USDT --timeframes 1h 4h 1d --window-size 1000
-```
+**Phase 8 — DERIVATIVES / POSITIONING (implemented):** funding rate (last
+settled, `funding_time ≤ t`), open-interest 22-bar log change, and basis
+(`mark/spot − 1`), as a linear HAR extension under the frozen HAR benchmark and
+the pre-registered C1–C7 gate (PASS = all 7 · B = C1 only · C = C1 false).
+Data: public Binance USD-M market-data endpoints only (no key, no trading).
+Point-in-time alignment with staleness bounds (missing required observation →
+skip; no forward-fill; no interpolation). See
+`docs/DERIVATIVES_METHODOLOGY.md`. **Real run pending** derivative data
+availability on the target machine; STOP rule pre-registered (B/C closes the
+derivatives family).
 
 No trading strategy, no profitability claims, no hyperparameter search, and no
 tuning on the OOS windows are performed. The frozen Phase 4/5/5b/5c reports are

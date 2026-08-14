@@ -31,6 +31,10 @@ from .ml_volatility import (run_ml_vs_har, build_feature_matrix, run_walk,
 from .cross_asset import (run_cross_asset, build_aligned_features,
                           run_walk_ols, evaluate_cross_gate,
                           classify_cross_gate)
+from .derivatives_volatility import (run_derivatives_volatility,
+                                     build_derivatives_features,
+                                     evaluate_derivatives_gate,
+                                     classify_derivatives_gate)
 
 __all__ = [
     "ModelManager",
@@ -93,4 +97,8 @@ __all__ = [
     "run_walk_ols",
     "evaluate_cross_gate",
     "classify_cross_gate",
+    "run_derivatives_volatility",
+    "build_derivatives_features",
+    "evaluate_derivatives_gate",
+    "classify_derivatives_gate",
 ]
