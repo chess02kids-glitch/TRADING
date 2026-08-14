@@ -68,6 +68,26 @@ def classify_classical_gate(criteria: Dict[str, Any]) -> str:
     return 'C'
 
 
+def _c6_from_dm(dm: Dict[str, Any]) -> bool:
+    """Criterion 6, computed label-independently from a pooled DM result.
+
+    True iff the DM p-value is below the corrected alpha AND the mean loss
+    difference is negative (system A = HAR has lower loss). Deliberately does
+    NOT read the 'winner' string, which is a reporting convenience only.
+    """
+    return (dm.get('p_value') is not None
+            and dm['p_value'] < GATE_P_VALUE
+            and dm.get('mean_loss_diff') is not None
+            and dm['mean_loss_diff'] < 0)
+
+
+def _c8_from_regime_pool(regime_pool: Dict[str, Dict[str, Any]]) -> bool:
+    """Criterion 8: HAR beats previous-range across more than one regime."""
+    wins = sum(1 for d in regime_pool.values()
+               if d.get('har_beats_prev') is True)
+    return wins >= 2
+
+
 # --------------------------------------------------------------------------- #
 # Improvement %, classical pairwise tests, regime tracking
 # --------------------------------------------------------------------------- #
@@ -112,7 +132,10 @@ def classical_pairwise(vrows: List[VolatilityRow], key_a: str, key_b: str,
     eb = [err(r, key_b) for r in vrows]
     diff = [a - b for a, b in zip(ea, eb)]
     return {
-        'dm': diebold_mariano(ea, eb),
+        # system A = HAR (primary model), system B = the competing classical
+        # baseline. The winner is reported as 'har' / 'baseline' (the specific
+        # baseline name is in the enclosing 'har_vs_<key>' dict key).
+        'dm': diebold_mariano(ea, eb, a_name='har', b_name='baseline'),
         'bootstrap_mean_diff_ci': circular_block_bootstrap_mean_ci(diff),
         'wilcoxon_p_value': wilcoxon_signed_rank(diff)['p_value'],
         'wilcoxon_n_nonzero': wilcoxon_signed_rank(diff)['n_nonzero'],
@@ -346,8 +369,8 @@ def run_classical_volatility_benchmark(predictor, config: EvaluationConfig,
                 norm_a.append(abs(f_har / r.denom_close - r.actual_range / r.denom_close))
                 norm_b.append(abs(f_key / r.denom_close - r.actual_range / r.denom_close))
         pooled[key] = {
-            'raw': diebold_mariano(raw_a, raw_b),
-            'normalized': diebold_mariano(norm_a, norm_b),
+            'raw': diebold_mariano(raw_a, raw_b, a_name='har', b_name='baseline'),
+            'normalized': diebold_mariano(norm_a, norm_b, a_name='har', b_name='baseline'),
             'raw_bootstrap': circular_block_bootstrap_mean_ci([a - b for a, b in zip(raw_a, raw_b)]),
             'raw_wilcoxon_p': wilcoxon_signed_rank([a - b for a, b in zip(raw_a, raw_b)])['p_value'],
         }
@@ -367,7 +390,6 @@ def run_classical_volatility_benchmark(predictor, config: EvaluationConfig,
             if r.prev_range is not None:
                 d['prev'].append(r.prev_range)
     regime_result = {}
-    regime_wins = 0
     for reg, d in regime_pool.items():
         har_mae = _mae(d['har'], d['actual'])
         prev_mae = _mae(d['prev'], d['actual'])
@@ -376,8 +398,7 @@ def run_classical_volatility_benchmark(predictor, config: EvaluationConfig,
         regime_result[reg] = {'har_mae': har_mae, 'prev_mae': prev_mae,
                               'har_beats_prev': har_beats_prev,
                               'n': len(d['actual'])}
-        regime_wins += int(har_beats_prev)
-    c8 = regime_wins >= 2
+    c8 = _c8_from_regime_pool(regime_result)
 
     # Pooled HAR adequacy (regime tracking + dispersion).
     pooled_tracking = har_regime_tracking(
@@ -395,10 +416,11 @@ def run_classical_volatility_benchmark(predictor, config: EvaluationConfig,
         if (_fmean(all_har) is not None and abs(_fmean(all_actual)) > 1e-12) else None
 
     # c6: pooled DM (HAR vs prev) significant under Bonferroni.
+    # Label-independent: a p-value below the corrected alpha AND a negative mean
+    # loss difference (HAR errors - prev errors < 0) means HAR is significantly
+    # better. This never depends on the DM 'winner' string.
     dm_har_prev = pooled['prev']['raw']
-    c6 = (dm_har_prev['p_value'] is not None
-          and dm_har_prev['p_value'] < GATE_P_VALUE
-          and dm_har_prev['winner'] == 'har')
+    c6 = _c6_from_dm(dm_har_prev)
 
     # Gate.
     gate = evaluate_classical_gate(window_records)
@@ -421,7 +443,9 @@ def run_classical_volatility_benchmark(predictor, config: EvaluationConfig,
                 continue
             kh_norm_a.append(abs(r.kronos_range / r.denom_close - r.actual_range / r.denom_close))
             kh_norm_b.append(abs(r.har_range / r.denom_close - r.actual_range / r.denom_close))
-    kronos_dm_vs_har = diebold_mariano(kh_norm_a, kh_norm_b)
+    # system A = Kronos, system B = HAR (names kept explicit for clarity).
+    kronos_dm_vs_har = diebold_mariano(kh_norm_a, kh_norm_b,
+                                       a_name='kronos', b_name='har')
     kronos_wins_majority = (kronos_vs_har_wins > GATE_MAJORITY * len(eligible_kh)) \
         if eligible_kh else None
     kronos_dm_favors = (kronos_dm_vs_har['winner'] == 'kronos'
@@ -496,4 +520,52 @@ def run_classical_volatility_benchmark(predictor, config: EvaluationConfig,
             'Kronos is evaluated as a challenger against the best classical model',
             'the frozen Phase 4/5 and Phase 5b reports are unchanged',
         ],
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Recompute the gate from a saved report (no re-inference needed)
+# --------------------------------------------------------------------------- #
+def recompute_classical_gate(report: Dict[str, Any]) -> Dict[str, Any]:
+    """Re-derive the classical A/B/C gate from a saved benchmark report.
+
+    Uses only the persisted ``window_records``, ``pooled_statistics`` and
+    ``regime_pooled`` blocks, and applies the CORRECTED, label-independent
+    c6/c8 logic. This lets the scientific verdict be recomputed from the JSON
+    output without re-running model inference.
+
+    Primary windows only: the gate always filters to non-daily (1h/4h) and
+    non-low-power windows via ``evaluate_classical_gate``, and the pooled DM /
+    regime blocks were themselves computed over those same primary windows.
+    """
+    records = report.get('window_records', [])
+    gate = evaluate_classical_gate(records)
+    if gate.get('overall') != 'pending':
+        pooled = report.get('pooled_statistics', {})
+        dm_har_prev = (pooled.get('prev', {}) or {}).get('raw', {})
+        regime_pool = report.get('regime_pooled', {})
+        gate['criteria']['c6_statistical_support'] = _c6_from_dm(dm_har_prev)
+        gate['criteria']['c8_regime_breadth'] = _c8_from_regime_pool(regime_pool)
+        gate['overall'] = 'pass' if all(v is True for v in gate['criteria'].values()) else 'fail'
+        gate['verdict'] = classify_classical_gate(gate['criteria'])
+        gate['verdict_meaning'] = VERDICT_MEANING[gate['verdict']]
+    return gate
+
+
+def recompute_classical_summary(report: Dict[str, Any]) -> Dict[str, Any]:
+    """Convenience: corrected gate + primary-window pooled DM blocks + verdict."""
+    pooled = report.get('pooled_statistics', {})
+    gate = recompute_classical_gate(report)
+    kronos = report.get('kronos_vs_best_classical', {})
+    return {
+        'corrected_gate': gate,
+        'pooled_primary_dm': {
+            'har_vs_prev': (pooled.get('prev', {}) or {}).get('raw'),
+            'har_vs_ewma': (pooled.get('ewma', {}) or {}).get('raw'),
+            'har_vs_rolling5': (pooled.get('rolling5', {}) or {}).get('raw'),
+            'har_vs_rolling22': (pooled.get('rolling22', {}) or {}).get('raw'),
+        },
+        'kronos_vs_best_classical': kronos,
+        'verdict': gate.get('verdict'),
+        'verdict_meaning': gate.get('verdict_meaning'),
     }

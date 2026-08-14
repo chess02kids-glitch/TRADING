@@ -56,6 +56,30 @@ Primary comparisons: **HAR vs previous-range, EWMA, rolling-5, rolling-22**.
 - Pooled statistics are reported as **supplementary only**; per-window results
   are primary.
 
+### DM sign convention (documented)
+
+`diebold_mariano(errors_a, errors_b)` computes
+`mean_loss_diff = mean(errors_a - errors_b)`; system A is the first array
+(HAR in the classical comparisons, Kronos in the Kronos-vs-baseline
+comparisons).
+
+- `mean_loss_diff < 0` ⇒ system A (HAR) has lower loss ⇒ HAR wins.
+- `mean_loss_diff > 0` ⇒ system B (baseline) wins.
+- `mean_loss_diff = 0` ⇒ tie.
+
+The `winner` string is a reporting convenience labelled via `a_name`/`b_name`;
+the gate criterion c6 is computed **label-independently** from
+`p < 0.0125 AND mean_loss_diff < 0` so it cannot be broken by a stale label.
+
+### Audit note (2026-08-14)
+
+The first real run contained two defects, both fixed:
+1. c6 was gated on `dm['winner'] == 'har'` (never true) — a genuine gate bug.
+2. classical DM `winner` labels read `'kronos'` (stale naming). Calculations
+   (DM statistic, p, mean loss diff, bootstrap, Wilcoxon) were correct.
+The corrected verdict is computed from the same report data by
+`recompute_classical_gate`.
+
 ## Shrinkage / adequacy
 
 HAR adequacy is tested directly: group rows by the past-only volatility regime

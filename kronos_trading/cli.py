@@ -23,7 +23,9 @@ from .robustness import run_robustness
 from .research_targets import run_research_experiment
 from .reference_validation import build_validation_report
 from .volatility_research import run_volatility_research
-from .classical_volatility import run_classical_volatility_benchmark
+from .classical_volatility import (run_classical_volatility_benchmark,
+                                   recompute_classical_gate,
+                                   recompute_classical_summary)
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / 'data' / 'db' / 'kronos_trading_verified.db'
@@ -260,6 +262,14 @@ def main(argv=None):
                     help='JSON output path (default: '
                          'data/eval/classical_volatility_benchmark_report.json)')
 
+    rc = sub.add_parser('recompute-classical-gate',
+                        help='re-derive the classical A/B/C gate from a saved '
+                             'benchmark report (corrected c6/c8, no re-inference)')
+    rc.add_argument('--report', required=True,
+                    help='path to a classical_volatility_benchmark_report.json')
+    rc.add_argument('--summary', action='store_true',
+                    help='print the pooled DM + Kronos-vs-HAR summary too')
+
     args = p.parse_args(argv)
     try:
         if args.cmd == 'predict':
@@ -278,6 +288,8 @@ def main(argv=None):
             _volatility_research(args)
         elif args.cmd == 'classical-volatility':
             _classical_volatility(args)
+        elif args.cmd == 'recompute-classical-gate':
+            _recompute_classical_gate(args)
         else:
             _evaluate(args)
         return 0
@@ -641,6 +653,20 @@ def _classical_volatility(args):
     }, indent=2, default=str))
     print('saved classical volatility benchmark report to %s' % output,
           file=sys.stderr)
+    return 0
+
+
+def _recompute_classical_gate(args):
+    path = Path(args.report)
+    if not path.exists():
+        print('error: report not found: %s' % path, file=sys.stderr)
+        return 2
+    with open(path) as f:
+        report = json.load(f)
+    if args.summary:
+        print(json.dumps(recompute_classical_summary(report), indent=2, default=str))
+    else:
+        print(json.dumps(recompute_classical_gate(report), indent=2, default=str))
     return 0
 
 

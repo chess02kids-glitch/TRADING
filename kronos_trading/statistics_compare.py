@@ -340,7 +340,8 @@ def spearman(a, b) -> Optional[float]:
 
 
 def diebold_mariano(errors_a, errors_b, lag: Optional[int] = None,
-                    loss: str = 'abs') -> Dict[str, Any]:
+                    loss: str = 'abs', a_name: str = 'kronos',
+                    b_name: str = 'baseline') -> Dict[str, Any]:
     """Two-sided Diebold-Mariano test on paired forecast losses.
 
     ``errors_a`` / ``errors_b`` are per-timestamp loss values (default: absolute
@@ -349,6 +350,17 @@ def diebold_mariano(errors_a, errors_b, lag: Optional[int] = None,
     Newey-West HAC standard error (fixed lag rule ``4*(n/100)**(2/9)``), which
     is the appropriate variance estimator for serially correlated forecast
     errors. The iid normal approximation is the only assumption.
+
+    Sign convention (documented):
+
+    * ``mean_loss_diff = mean(errors_a - errors_b)``.
+    * negative => system A (``a_name``) has lower loss => ``a_name`` wins;
+    * positive => system B (``b_name``) has lower loss => ``b_name`` wins;
+    * zero    => ``'tie'``.
+
+    ``a_name`` / ``b_name`` label the two systems; the defaults are the legacy
+    Kronos-vs-baseline names and are overridden by callers such as the
+    classical-volatility benchmark (``a_name='har', b_name='baseline'``).
     """
     a = np.asarray(errors_a, dtype=float)
     b = np.asarray(errors_b, dtype=float)
@@ -382,11 +394,11 @@ def diebold_mariano(errors_a, errors_b, lag: Optional[int] = None,
         var = 1e-12
     dm = dbar / math.sqrt(var)
     p = 2.0 * _normal_sf(abs(dm))
-    winner = 'kronos' if dbar < 0 else ('baseline' if dbar > 0 else 'tie')
+    winner = a_name if dbar < 0 else (b_name if dbar > 0 else 'tie')
     return {'n': n, 'dm_statistic': float(dm), 'p_value': float(p),
             'lag': lag, 'mean_loss_diff': dbar, 'winner': winner, 'loss': loss,
             'note': 'two-sided DM, Newey-West HAC variance; negative mean loss '
-                    'diff = system A (kronos) better'}
+                    'diff = system A (%s) better' % a_name}
 
 
 def circular_block_bootstrap_mean_ci(values, block_len: Optional[int] = None,

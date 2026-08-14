@@ -22,7 +22,9 @@ from .volatility_baselines import (volatility_forecasts, assign_regime,
                                    har_forecast, ewma_range, rolling_mean_range)
 from .classical_volatility import (run_classical_volatility_benchmark,
                                    evaluate_classical_gate,
-                                   classify_classical_gate, har_regime_tracking)
+                                   classify_classical_gate, har_regime_tracking,
+                                   recompute_classical_gate,
+                                   recompute_classical_summary)
 
 __all__ = [
     "ModelManager",
@@ -71,4 +73,6 @@ __all__ = [
     "evaluate_classical_gate",
     "classify_classical_gate",
     "har_regime_tracking",
+    "recompute_classical_gate",
+    "recompute_classical_summary",
 ]

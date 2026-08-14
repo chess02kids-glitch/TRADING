@@ -20,8 +20,10 @@
 - Phase 5b (volatility research): **VERDICT B (weak/ambiguous)** — Kronos beats
   previous-range but not serious baselines (pooled DM vs EWMA p=0.576, vs HAR
   p=0.00587); part of the MAE edge is forecast shrinkage.
-- Phase 5c (classical volatility benchmark): IMPLEMENTED — HAR as primary
-  model, Kronos as challenger; real run pending on the verified dataset
+- Phase 5c (classical volatility benchmark): real run executed; **audited** —
+  c6 gate + DM winner-label bugs fixed; corrected verdict **A (classical
+  volatility predictability established)**; Kronos does NOT add incremental
+  value over HAR (Phase 5b pooled DM vs HAR p=0.00587, HAR wins)
 
 ## Environment
 
@@ -284,7 +286,7 @@ The evaluator logic was validated here with a deterministic test double
 - window selection + documented timestamps;
 - CLI requires the real model (no mock fallback).
 
-Full suite: **173 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
+Full suite: **184 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
 that require the model; warning = pre-existing `PytestReturnNotNoneWarning`).
 
 ### To run the real-data robustness matrix on the target machine
@@ -309,7 +311,7 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 
 ## Testing
 
-- Full suite: `173 passed, 3 skipped, 1 warning`
+- Full suite: `184 passed, 3 skipped, 1 warning`
 - Phase 2 audit: `7 passed`
 - Offline system: `3 passed`
 - Historical-range regression: `14 passed`
@@ -319,6 +321,7 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 - Reference validation: `9 passed`
 - Phase 5b (volatility research): `24 passed`
 - Phase 5c (classical volatility): `13 passed`
+- Phase 5c audit (DM labels + c6 gate): `11 passed`
 
 ## Safety
 
@@ -600,6 +603,27 @@ priori): `docs/CLASSICAL_VOLATILITY_METHODOLOGY.md`.
 4. ≥2 of 3 windows · 5. survives normalization · 6. pooled DM p<0.0125
 (Bonferroni) · 7. not purely shrinkage (regime tracking) · 8. >1 regime.
 Verdict: A = predictability established · B = weak/ambiguous · C = none.
+
+### IMPLEMENTATION AUDIT (corrected)
+
+Two bugs were found and fixed after the first real run:
+
+1. **Genuine gate bug** — criterion c6 was computed as
+   `dm['winner'] == 'har'`, but `diebold_mariano` returned the hardcoded labels
+   `'kronos'/'baseline'`, so c6 was ALWAYS False regardless of the p-value.
+   Fixed: c6 is now derived label-independently from `p < 0.0125 AND
+   mean_loss_diff < 0` (see `_c6_from_dm`).
+2. **Naming/reporting bug** — the classical HAR-vs-* DM winner labels reported
+   `'kronos'` instead of `'har'/'baseline'`. `diebold_mariano` now takes
+   `a_name`/`b_name`, and the classical path passes `'har'`/`'baseline'`. The
+   DM statistic, p-value and mean loss difference were always correct.
+
+The corrected c6 uses the reported pooled HAR-vs-previous-range DM
+(`stat = -10.6305, p = 2.15e-26, mean loss diff = -27.53`): `p < 0.0125` and
+`mean loss diff < 0` → **c6 = true**. With c1–c5 and c7–c8 already true, all
+eight criteria pass → **classical verdict A**. The report can be re-derived
+without re-running inference via
+`python -m kronos_trading.cli recompute-classical-gate --report <path> --summary`.
 
 ### To run on the target machine
 
