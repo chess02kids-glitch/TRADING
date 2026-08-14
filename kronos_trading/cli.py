@@ -23,6 +23,7 @@ from .robustness import run_robustness
 from .research_targets import run_research_experiment
 from .reference_validation import build_validation_report
 from .volatility_research import run_volatility_research
+from .classical_volatility import run_classical_volatility_benchmark
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / 'data' / 'db' / 'kronos_trading_verified.db'
@@ -238,6 +239,27 @@ def main(argv=None):
     vol.add_argument('--output', default=None,
                     help='JSON output path (default: data/eval/volatility_research_report.json)')
 
+    cv = sub.add_parser('classical-volatility',
+                        help='Phase 5c: classical volatility benchmark '
+                             '(HAR as primary; Kronos as challenger)')
+    cv.add_argument('--db', default=str(DEFAULT_DB))
+    cv.add_argument('--assets', nargs='+', default=['BTC/USDT', 'ETH/USDT'])
+    cv.add_argument('--timeframes', nargs='+', default=['1h', '4h', '1d'])
+    cv.add_argument('--context', type=int, default=512)
+    cv.add_argument('--window-size', type=int, default=1000)
+    cv.add_argument('--seed', type=int, default=0)
+    cv.add_argument('--no-deterministic', action='store_true')
+    cv.add_argument('--model', default='NeoQuasar/Kronos-small')
+    cv.add_argument('--tokenizer', default='NeoQuasar/Kronos-Tokenizer-base')
+    cv.add_argument('--model-revision', default=REFERENCE_MODEL_REVISION)
+    cv.add_argument('--tokenizer-revision', default=REFERENCE_TOKENIZER_REVISION)
+    cv.add_argument('--device', default=None)
+    cv.add_argument('--max-context', type=int, default=512)
+    cv.add_argument('--cache-dir', default=None)
+    cv.add_argument('--output', default=None,
+                    help='JSON output path (default: '
+                         'data/eval/classical_volatility_benchmark_report.json)')
+
     args = p.parse_args(argv)
     try:
         if args.cmd == 'predict':
@@ -254,6 +276,8 @@ def main(argv=None):
             _validate_reference(args)
         elif args.cmd == 'volatility-research':
             _volatility_research(args)
+        elif args.cmd == 'classical-volatility':
+            _classical_volatility(args)
         else:
             _evaluate(args)
         return 0
@@ -553,6 +577,70 @@ def _volatility_research(args):
         'window_records': report['window_records'],
     }, indent=2, default=str))
     print('saved volatility research report to %s' % output, file=sys.stderr)
+    return 0
+
+
+def _classical_volatility(args):
+    if args.no_deterministic:
+        print('warning: --no-deterministic disables the argmax recipe; '
+              'sampling is stochastic and results are NOT reproducible.',
+              file=sys.stderr)
+
+    manager = ModelManager(
+        model_name=args.model,
+        tokenizer_name=args.tokenizer,
+        model_revision=args.model_revision,
+        tokenizer_revision=args.tokenizer_revision,
+        device=args.device or None,
+        max_context=args.max_context,
+        cache_dir=args.cache_dir or None,
+    ).load()
+    if not manager.available:
+        raise ModelUnavailableError(
+            'real Kronos model is unavailable for the classical volatility '
+            'benchmark: %s' % manager.error)
+
+    config = EvaluationConfig(
+        context_length=args.context,
+        horizon=1,  # next-candle high/low range
+        deterministic=not args.no_deterministic,
+        seed=args.seed,
+        direction_threshold=0.0005,
+        window_size=args.window_size,
+    )
+    if not config.deterministic:
+        config.top_k = 0
+        config.top_p = 0.9
+        config.sample_count = 1
+
+    series = [(s, tf) for s in args.assets for tf in args.timeframes]
+
+    def loader(symbol, timeframe):
+        return load_candles(args.db, symbol, timeframe)
+
+    report = run_classical_volatility_benchmark(
+        KronosRealPredictor(manager), config, series, loader)
+
+    output = Path(args.output) if args.output else (
+        ROOT / 'data' / 'eval' / 'classical_volatility_benchmark_report.json')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with open(output, 'w') as f:
+        json.dump(report, f, indent=2, default=str)
+
+    print(json.dumps({
+        'kind': report['kind'],
+        'configuration': report['configuration'],
+        'classical_baselines': report['classical_baselines'],
+        'targets': report['targets'],
+        'success_gate': report['success_gate'],
+        'pooled_statistics': report['pooled_statistics'],
+        'regime_pooled': report['regime_pooled'],
+        'har_adequacy': report['har_adequacy'],
+        'kronos_vs_best_classical': report['kronos_vs_best_classical'],
+        'window_records': report['window_records'],
+    }, indent=2, default=str))
+    print('saved classical volatility benchmark report to %s' % output,
+          file=sys.stderr)
     return 0
 
 

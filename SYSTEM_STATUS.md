@@ -17,9 +17,11 @@
 - Reference validation: **B (mismatch found → fixed)** — revision defaults now
   pinned; `amount` feature documented as a derived proxy; OHLCV/timestamp/
   normalization/API contract matches upstream bit-for-bit
-- Phase 5b (volatility research): IMPLEMENTED — serious baselines + normalized
-  target + shrinkage/regime/statistical analysis + success gate; real run
-  pending on the verified dataset
+- Phase 5b (volatility research): **VERDICT B (weak/ambiguous)** — Kronos beats
+  previous-range but not serious baselines (pooled DM vs EWMA p=0.576, vs HAR
+  p=0.00587); part of the MAE edge is forecast shrinkage.
+- Phase 5c (classical volatility benchmark): IMPLEMENTED — HAR as primary
+  model, Kronos as challenger; real run pending on the verified dataset
 
 ## Environment
 
@@ -282,7 +284,7 @@ The evaluator logic was validated here with a deterministic test double
 - window selection + documented timestamps;
 - CLI requires the real model (no mock fallback).
 
-Full suite: **160 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
+Full suite: **173 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
 that require the model; warning = pre-existing `PytestReturnNotNoneWarning`).
 
 ### To run the real-data robustness matrix on the target machine
@@ -307,7 +309,7 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 
 ## Testing
 
-- Full suite: `160 passed, 3 skipped, 1 warning`
+- Full suite: `173 passed, 3 skipped, 1 warning`
 - Phase 2 audit: `7 passed`
 - Offline system: `3 passed`
 - Historical-range regression: `14 passed`
@@ -316,6 +318,7 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 - Phase 5: `16 passed` (research targets)
 - Reference validation: `9 passed`
 - Phase 5b (volatility research): `24 passed`
+- Phase 5c (classical volatility): `13 passed`
 
 ## Safety
 
@@ -527,6 +530,28 @@ Validated offline with a deterministic test double: the gate correctly flags a
 experiment requires the GPU + weights + verified DB and is therefore
 **pending**.
 
+### REAL RESULT (executed on the verified dataset, target machine)
+
+**VERDICT = B — weak / ambiguous volatility signal.**
+
+Key findings (from `data/eval/volatility_research_report.json`, not committed):
+
+- Kronos beats previous-range persistence.
+- Kronos does **not** robustly beat serious volatility baselines.
+- Pooled DM Kronos vs EWMA: `p = 0.576` (no evidence Kronos is better).
+- Pooled DM Kronos vs HAR: `p = 0.00587` (HAR wins).
+- Normalized-range criterion failed.
+- Many Kronos dispersion ratios are substantially below 0.7 — Kronos often
+  produces lower-dispersion forecasts than realized volatility, so part of the
+  MAE improvement is forecast **shrinkage**, not volatility-state forecasting.
+- HAR vs Kronos MAE (examples): BTC 1h older/middle/recent ≈ 153.3/206.1/116.3
+  vs Kronos 167.8/212.2/118.2; BTC 4h ≈ 664.5/526.1/365.2 vs Kronos
+  698.1/542.2/367.0 — HAR slightly but consistently lower.
+
+Interpretation: classical volatility models (HAR/EWMA) already explain most of
+the predictable structure; Kronos adds no incremental volatility information.
+This motivated Phase 5c (classical benchmark as the primary design).
+
 ### To run on the target machine
 
 ```bash
@@ -535,16 +560,54 @@ python -m kronos_trading.cli volatility-research \
   --assets BTC/USDT ETH/USDT --timeframes 1h 4h 1d --window-size 1000
 ```
 
-### GO / PIVOT / STOP decision (to be recorded after the real run)
-
-- **A (genuine)** → one follow-up volatility-only experiment.
-- **B (weak/ambiguous)** → one chosen follow-up, or abandon the zero-shot
-  volatility hypothesis.
-- **C (false positive)** → STOP the zero-shot Kronos volatility path; move to
-  the non-Kronos diagnostic baseline stage.
-
 No tuning, no threshold optimization, no trading strategy, no profitability
 claims. The frozen Phase 4/5 results are unchanged.
+
+---
+
+## Phase 5c — Classical Volatility Benchmark (HAR as primary; Kronos as challenger)
+
+### Status: IMPLEMENTED — real experiment pending execution on the verified dataset
+
+The highest-value question is now **not** "does Kronos win" but: *is the crypto
+candle-range problem itself predictable, and does the classical HAR model
+already capture that structure?* Full methodology (all constants fixed a
+priori): `docs/CLASSICAL_VOLATILITY_METHODOLOGY.md`.
+
+### What was added (additive; reuses Phase 5b machinery)
+
+- `kronos_trading/classical_volatility.py`
+  - classical benchmark matrix (previous-range / rolling-5 / rolling-22 /
+    EWMA / HAR), with HAR as the primary model;
+  - improvement % vs previous-range (raw + normalized);
+  - HAR-vs-{prev,EWMA,rolling5,rolling22} paired DM / block-bootstrap /
+    Wilcoxon, per window + pooled (supplementary);
+  - HAR shrinkage/adequacy diagnostics: dispersion ratio, bias ratio, and a
+    direct regime-tracking test (does HAR distinguish low/med/high regimes);
+  - pre-registered 8-criterion A/B/C decision for *classical* predictability;
+  - Kronos-vs-HAR incremental-value comparison (conservative: majority of
+    windows AND significant pooled DM).
+- CLI `classical-volatility` →
+  `data/eval/classical_volatility_benchmark_report.json`.
+- `tests/test_classical_volatility.py` — 13 tests (no-lookahead, past-only HAR
+  fitting, determinism, identical timestamps, normalized target, baseline
+  consistency, short-context safety, statistical alignment, improvement %,
+  regime tracking, gate A/B/C).
+
+### Pre-registered decision (classical predictability)
+
+1. HAR beats previous-range (raw MAE) · 2. HAR beats EWMA · 3. ≥2 of 4 series ·
+4. ≥2 of 3 windows · 5. survives normalization · 6. pooled DM p<0.0125
+(Bonferroni) · 7. not purely shrinkage (regime tracking) · 8. >1 regime.
+Verdict: A = predictability established · B = weak/ambiguous · C = none.
+
+### To run on the target machine
+
+```bash
+python -m kronos_trading.cli classical-volatility \
+  --db data\db\kronos_trading_verified.db \
+  --assets BTC/USDT ETH/USDT --timeframes 1h 4h 1d --window-size 1000
+```
 
 ## Next Phase
 

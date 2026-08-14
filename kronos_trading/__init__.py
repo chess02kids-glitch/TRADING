@@ -20,6 +20,9 @@ from .reference_validation import (REFERENCE, run_contract_comparison,
 from .volatility_research import (run_volatility_research, evaluate_success_gate)
 from .volatility_baselines import (volatility_forecasts, assign_regime,
                                    har_forecast, ewma_range, rolling_mean_range)
+from .classical_volatility import (run_classical_volatility_benchmark,
+                                   evaluate_classical_gate,
+                                   classify_classical_gate, har_regime_tracking)
 
 __all__ = [
     "ModelManager",
@@ -64,4 +67,8 @@ __all__ = [
     "har_forecast",
     "ewma_range",
     "rolling_mean_range",
+    "run_classical_volatility_benchmark",
+    "evaluate_classical_gate",
+    "classify_classical_gate",
+    "har_regime_tracking",
 ]
