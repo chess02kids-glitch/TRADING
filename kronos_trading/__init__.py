@@ -25,6 +25,9 @@ from .classical_volatility import (run_classical_volatility_benchmark,
                                    classify_classical_gate, har_regime_tracking,
                                    recompute_classical_gate,
                                    recompute_classical_summary)
+from .ml_volatility import (run_ml_vs_har, build_feature_matrix, run_walk,
+                            fit_model, FEATURE_NAMES, evaluate_ml_gate,
+                            classify_ml_gate)
 
 __all__ = [
     "ModelManager",
@@ -75,4 +78,11 @@ __all__ = [
     "har_regime_tracking",
     "recompute_classical_gate",
     "recompute_classical_summary",
+    "run_ml_vs_har",
+    "build_feature_matrix",
+    "run_walk",
+    "fit_model",
+    "FEATURE_NAMES",
+    "evaluate_ml_gate",
+    "classify_ml_gate",
 ]

@@ -26,6 +26,7 @@ from .volatility_research import run_volatility_research
 from .classical_volatility import (run_classical_volatility_benchmark,
                                    recompute_classical_gate,
                                    recompute_classical_summary)
+from .ml_volatility import run_ml_vs_har
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / 'data' / 'db' / 'kronos_trading_verified.db'
@@ -270,6 +271,20 @@ def main(argv=None):
     rc.add_argument('--summary', action='store_true',
                     help='print the pooled DM + Kronos-vs-HAR summary too')
 
+    ml = sub.add_parser('ml-vs-har',
+                        help='Phase 6: supervised ML (LightGBM/XGBoost) vs HAR '
+                             'volatility benchmark, strict walk-forward')
+    ml.add_argument('--db', default=str(DEFAULT_DB))
+    ml.add_argument('--assets', nargs='+', default=['BTC/USDT', 'ETH/USDT'])
+    ml.add_argument('--timeframes', nargs='+', default=['1h', '4h', '1d'])
+    ml.add_argument('--context', type=int, default=512,
+                    help='window-boundary warm-up (matches the frozen classical '
+                         'benchmark; ML features use their own 64-bar warm-up)')
+    ml.add_argument('--window-size', type=int, default=1000)
+    ml.add_argument('--output', default=None,
+                    help='JSON output path (default: '
+                         'data/eval/ml_vs_har_volatility_report.json)')
+
     args = p.parse_args(argv)
     try:
         if args.cmd == 'predict':
@@ -290,6 +305,8 @@ def main(argv=None):
             _classical_volatility(args)
         elif args.cmd == 'recompute-classical-gate':
             _recompute_classical_gate(args)
+        elif args.cmd == 'ml-vs-har':
+            _ml_vs_har(args)
         else:
             _evaluate(args)
         return 0
@@ -667,6 +684,46 @@ def _recompute_classical_gate(args):
         print(json.dumps(recompute_classical_summary(report), indent=2, default=str))
     else:
         print(json.dumps(recompute_classical_gate(report), indent=2, default=str))
+    return 0
+
+
+def _ml_vs_har(args):
+    config = EvaluationConfig(
+        context_length=args.context,
+        horizon=1,
+        deterministic=True,
+        seed=0,
+        direction_threshold=0.0005,
+        window_size=args.window_size,
+    )
+    series = [(s, tf) for s in args.assets for tf in args.timeframes]
+
+    def loader(symbol, timeframe):
+        return load_candles(args.db, symbol, timeframe)
+
+    report = run_ml_vs_har(loader, config, series)
+
+    output = Path(args.output) if args.output else (
+        ROOT / 'data' / 'eval' / 'ml_vs_har_volatility_report.json')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with open(output, 'w') as f:
+        json.dump(report, f, indent=2, default=str)
+
+    print(json.dumps({
+        'kind': report['kind'],
+        'configuration': report['configuration'],
+        'ml_configuration': report['ml_configuration'],
+        'targets': report['targets'],
+        'baselines': report['baselines'],
+        'walk_forward': report['walk_forward'],
+        'statistical_methodology': report['statistical_methodology'],
+        'window_records': report['window_records'],
+        'pooled_statistics': report['pooled_statistics'],
+        'regime_pooled': report['regime_pooled'],
+        'ml_adequacy': report['ml_adequacy'],
+        'success_gate': report['success_gate'],
+    }, indent=2, default=str))
+    print('saved ML-vs-HAR report to %s' % output, file=sys.stderr)
     return 0
 
 

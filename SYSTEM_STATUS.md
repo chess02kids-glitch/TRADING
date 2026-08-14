@@ -24,6 +24,9 @@
   c6 gate + DM winner-label bugs fixed; corrected verdict **A (classical
   volatility predictability established)**; Kronos does NOT add incremental
   value over HAR (Phase 5b pooled DM vs HAR p=0.00587, HAR wins)
+- Phase 6 (ML vs HAR): IMPLEMENTED — LightGBM/XGBoost supervised model vs the
+  HAR champion with strict expanding-window walk-forward; real run pending on
+  the verified dataset
 
 ## Environment
 
@@ -286,7 +289,7 @@ The evaluator logic was validated here with a deterministic test double
 - window selection + documented timestamps;
 - CLI requires the real model (no mock fallback).
 
-Full suite: **184 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
+Full suite: **200 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
 that require the model; warning = pre-existing `PytestReturnNotNoneWarning`).
 
 ### To run the real-data robustness matrix on the target machine
@@ -311,7 +314,7 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 
 ## Testing
 
-- Full suite: `184 passed, 3 skipped, 1 warning`
+- Full suite: `200 passed, 3 skipped, 1 warning`
 - Phase 2 audit: `7 passed`
 - Offline system: `3 passed`
 - Historical-range regression: `14 passed`
@@ -321,6 +324,8 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 - Reference validation: `9 passed`
 - Phase 5b (volatility research): `24 passed`
 - Phase 5c (classical volatility): `13 passed`
+- Phase 5c audit (DM labels + c6 gate): `11 passed`
+- Phase 6 (ML vs HAR): `16 passed`
 - Phase 5c audit (DM labels + c6 gate): `11 passed`
 
 ## Safety
@@ -633,13 +638,74 @@ python -m kronos_trading.cli classical-volatility \
   --assets BTC/USDT ETH/USDT --timeframes 1h 4h 1d --window-size 1000
 ```
 
+---
+
+## Phase 6 — Supervised ML vs HAR (does nonlinear ML add value?)
+
+### Status: IMPLEMENTED — real experiment pending execution on the verified dataset
+
+The Kronos investigation is closed (Kronos adds nothing over HAR). The
+remaining highest-value question: does a simple supervised ML model extract
+incremental OHLCV volatility information beyond the HAR champion? Full
+methodology (all constants fixed a priori): `docs/ML_VS_HAR_METHODOLOGY.md`.
+
+### What was added
+
+- `kronos_trading/ml_volatility.py`
+  - 33 fixed, past-only OHLCV features (`build_feature_matrix`, left-aligned
+    rolling windows + `.shift(1)` ⇒ no look-ahead by construction).
+  - LightGBM (XGBoost fallback) with a fixed configuration and deterministic
+    seeds.
+  - `run_walk`: expanding-window walk-forward, retrain every 100 predictions,
+    with a `leaks` counter and feature-importance history.
+  - `run_ml_vs_har`: reuses the evaluator's window machinery (identical
+    timestamps/baselines/regimes to the frozen classical benchmark) and emits
+    the full report: per-window ML/baseline metrics (normalized + raw), ML-vs-HAR
+    DM/bootstrap/Wilcoxon, regime analysis, shrinkage (dispersion/bias ratios +
+    regime tracking), feature-importance stability, and the 8-criterion
+    success gate.
+- CLI `ml-vs-har` → `data/eval/ml_vs_har_volatility_report.json` (CPU only; no
+  GPU/Kronos required).
+- `tests/test_phase6_ml.py` — 16 tests (no-lookahead features, rolling-feature
+  correctness, training-cutoff, walk-forward future-invariance, determinism,
+  target alignment, identical timestamps, statistical alignment,
+  empty/short-history safety, gate A/B/C + leakage blocking).
+
+### Pre-registered success gate (all 8 must hold for verdict A)
+
+1. ML beats HAR on normalized MAE in ≥2/3 windows for ≥2/4 series ·
+2. same for normalized RMSE · 3. pooled DM (ML vs HAR) p<0.05 and ML wins ·
+4. survives raw-range · 5. survives regime analysis · 6. not purely shrinkage ·
+7. ≥2/3 windows (not one isolated period) · 8. no look-ahead.
+Verdict: A = ML adds genuine incremental value · B = weak/ambiguous ·
+C = ML fails (HAR already captures the structure).
+
+### Offline validation (sandbox)
+
+The full pipeline was validated on synthetic AR(1)-volatility data with real
+LightGBM: correct report shape, `leaks=0`, correct DM labels (`winner='har'`),
+and — as expected when the data is HAR-generated — verdict **C**. The real
+experiment requires the verified dataset and is therefore **pending**.
+
+### To run on the target machine
+
+```bash
+python -m kronos_trading.cli ml-vs-har \
+  --db data\db\kronos_trading_verified.db \
+  --assets BTC/USDT ETH/USDT --timeframes 1h 4h 1d --window-size 1000
+```
+
 ## Next Phase
 
-Do **not** proceed to strategy development. The frozen Phase 4 result is C
-(no demonstrated predictive edge over persistence for the original target). If
-the Phase 5 target research also returns C, document that the current
-pretrained Kronos approach lacks sufficient evidence of predictive edge on this
-dataset and investigate alternative model/timeframe/data formulations before
-any strategy work. If a target returns A (robust promise across >1 window
-without tuning), recommend that single formulation for a future out-of-sample
-experiment. No profitability claims are made at any point.
+Decision tree (post-run):
+
+- **A (ML adds genuine incremental value)** → next experiment may add richer
+  data (cross-asset features, funding/open interest, on-chain, sentiment/macro).
+- **B (weak/ambiguous)** → HAR remains the better research model; at most one
+  tightly justified follow-up.
+- **C (ML fails)** → the OHLCV-only volatility structure is adequately captured
+  by a simple classical model; stop adding model complexity to this branch.
+
+No trading strategy, no profitability claims, no hyperparameter search, and no
+tuning on the OOS windows are performed. The frozen Phase 4/5/5b/5c reports are
+unchanged.
