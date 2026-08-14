@@ -29,6 +29,9 @@
 - **OHLCV-only model-complexity branch: CLOSED** — HAR is the frozen champion;
   next branch is NEW INFORMATION (cross-asset), see
   `docs/NEXT_RESEARCH_BRANCH.md`.
+- Phase 7 (cross-asset information): IMPLEMENTED — HAR + linear cross-asset
+  extension (expanding past-only OLS) vs frozen HAR; real run pending on the
+  verified dataset
 
 ## Environment
 
@@ -291,7 +294,7 @@ The evaluator logic was validated here with a deterministic test double
 - window selection + documented timestamps;
 - CLI requires the real model (no mock fallback).
 
-Full suite: **200 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
+Full suite: **217 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
 that require the model; warning = pre-existing `PytestReturnNotNoneWarning`).
 
 ### To run the real-data robustness matrix on the target machine
@@ -316,7 +319,7 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 
 ## Testing
 
-- Full suite: `200 passed, 3 skipped, 1 warning`
+- Full suite: `217 passed, 3 skipped, 1 warning`
 - Phase 2 audit: `7 passed`
 - Offline system: `3 passed`
 - Historical-range regression: `14 passed`
@@ -328,6 +331,7 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 - Phase 5c (classical volatility): `13 passed`
 - Phase 5c audit (DM labels + c6 gate): `11 passed`
 - Phase 6 (ML vs HAR): `16 passed`
+- Phase 7 (cross-asset): `17 passed`
 
 ## Safety
 
@@ -706,12 +710,25 @@ The next research question tests **new information, not new architectures**:
 > Does information from other assets improve volatility forecasting beyond
 > single-asset HAR?
 
-Recommended first data experiment (designed, not yet implemented): cross-asset
-/ market-wide crypto features (the other asset's trailing realized volatility,
-normalized range and return factors) added to a HAR-linear extension, evaluated
-under the frozen HAR benchmark with strict timestamp alignment and no
-forward-fill. Ranking, design, gate and STOP conditions:
-`docs/NEXT_RESEARCH_BRANCH.md`.
+Recommended first data experiment: cross-asset / market-wide crypto features
+(the other asset's trailing realized volatility, normalized range and return
+factors) added to a HAR-linear extension, evaluated under the frozen HAR
+benchmark with strict timestamp alignment and no forward-fill. Ranking, design,
+gate and STOP conditions: `docs/NEXT_RESEARCH_BRANCH.md`.
+
+**Phase 7 (implemented):** this cross-asset experiment is now built
+(`kronos_trading/cross_asset.py`, CLI `cross-asset`). It adds exactly four
+other-asset features (previous normalized range, trailing 22-bar realized
+volatility, 1-bar return, 22-bar return) to the frozen HAR via expanding
+past-only OLS, refit every step, with strict `open time == T − step` alignment,
+no forward-fill, a leakage counter, and a pre-registered 7-criterion gate
+(PASS/B/C). The real-data run is pending:
+
+```bash
+python -m kronos_trading.cli cross-asset \
+  --db data\db\kronos_trading_verified.db \
+  --assets BTC/USDT ETH/USDT --timeframes 1h 4h 1d --window-size 1000
+```
 
 No trading strategy, no profitability claims, no hyperparameter search, and no
 tuning on the OOS windows are performed. The frozen Phase 4/5/5b/5c reports are

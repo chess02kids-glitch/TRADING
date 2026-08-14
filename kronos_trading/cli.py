@@ -27,6 +27,7 @@ from .classical_volatility import (run_classical_volatility_benchmark,
                                    recompute_classical_gate,
                                    recompute_classical_summary)
 from .ml_volatility import run_ml_vs_har
+from .cross_asset import run_cross_asset
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DB = ROOT / 'data' / 'db' / 'kronos_trading_verified.db'
@@ -285,6 +286,20 @@ def main(argv=None):
                     help='JSON output path (default: '
                          'data/eval/ml_vs_har_volatility_report.json)')
 
+    ca = sub.add_parser('cross-asset',
+                        help='Phase 7: cross-asset information vs frozen HAR '
+                             '(HAR + linear cross-asset extension, expanding OLS)')
+    ca.add_argument('--db', default=str(DEFAULT_DB))
+    ca.add_argument('--assets', nargs='+', default=['BTC/USDT', 'ETH/USDT'])
+    ca.add_argument('--timeframes', nargs='+', default=['1h', '4h', '1d'])
+    ca.add_argument('--context', type=int, default=512,
+                    help='window-boundary warm-up (matches the frozen classical '
+                         'benchmark)')
+    ca.add_argument('--window-size', type=int, default=1000)
+    ca.add_argument('--output', default=None,
+                    help='JSON output path (default: '
+                         'data/eval/cross_asset_volatility_report.json)')
+
     args = p.parse_args(argv)
     try:
         if args.cmd == 'predict':
@@ -307,6 +322,8 @@ def main(argv=None):
             _recompute_classical_gate(args)
         elif args.cmd == 'ml-vs-har':
             _ml_vs_har(args)
+        elif args.cmd == 'cross-asset':
+            _cross_asset(args)
         else:
             _evaluate(args)
         return 0
@@ -724,6 +741,51 @@ def _ml_vs_har(args):
         'success_gate': report['success_gate'],
     }, indent=2, default=str))
     print('saved ML-vs-HAR report to %s' % output, file=sys.stderr)
+    return 0
+
+
+def _cross_asset(args):
+    config = EvaluationConfig(
+        context_length=args.context,
+        horizon=1,
+        deterministic=True,
+        seed=0,
+        direction_threshold=0.0005,
+        window_size=args.window_size,
+    )
+    assets = list(dict.fromkeys(args.assets))  # dedupe, preserve order
+    pairs = []
+    for tf in args.timeframes:
+        for i, a in enumerate(assets):
+            for b in assets:
+                if a != b:
+                    pairs.append((a, b, tf))
+
+    def loader(symbol, timeframe):
+        return load_candles(args.db, symbol, timeframe)
+
+    report = run_cross_asset(loader, config, pairs)
+
+    output = Path(args.output) if args.output else (
+        ROOT / 'data' / 'eval' / 'cross_asset_volatility_report.json')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with open(output, 'w') as f:
+        json.dump(report, f, indent=2, default=str)
+
+    print(json.dumps({
+        'kind': report['kind'],
+        'configuration': report['configuration'],
+        'model': report['model'],
+        'target': report['target'],
+        'frozen_baseline': report['frozen_baseline'],
+        'statistical_methodology': report['statistical_methodology'],
+        'window_records': report['window_records'],
+        'pooled_statistics': report['pooled_statistics'],
+        'regime_pooled': report['regime_pooled'],
+        'cross_adequacy': report['cross_adequacy'],
+        'success_gate': report['success_gate'],
+    }, indent=2, default=str))
+    print('saved cross-asset report to %s' % output, file=sys.stderr)
     return 0
 
 

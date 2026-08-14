@@ -28,6 +28,9 @@ from .classical_volatility import (run_classical_volatility_benchmark,
 from .ml_volatility import (run_ml_vs_har, build_feature_matrix, run_walk,
                             fit_model, FEATURE_NAMES, evaluate_ml_gate,
                             classify_ml_gate)
+from .cross_asset import (run_cross_asset, build_aligned_features,
+                          run_walk_ols, evaluate_cross_gate,
+                          classify_cross_gate)
 
 __all__ = [
     "ModelManager",
@@ -85,4 +88,9 @@ __all__ = [
     "FEATURE_NAMES",
     "evaluate_ml_gate",
     "classify_ml_gate",
+    "run_cross_asset",
+    "build_aligned_features",
+    "run_walk_ols",
+    "evaluate_cross_gate",
+    "classify_cross_gate",
 ]

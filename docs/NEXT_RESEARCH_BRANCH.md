@@ -1,6 +1,11 @@
 # Next Research Branch — New Information, Not New Architectures
 
-**Date:** 2026-08-14 · **Status:** ANALYSIS (no implementation yet)
+**Date:** 2026-08-14 · **Status:** DESIGNED → IMPLEMENTED (Phase 7 cross-asset experiment)
+
+> Update: the cross-asset experiment designed below has been implemented as
+> Phase 7 (`kronos_trading/cross_asset.py`, CLI `cross-asset`). The design,
+> gate and STOP conditions below are unchanged; the implementation follows them
+> exactly. The real-data run is pending on the verified dataset.
 
 The OHLCV-only model-complexity branch is CLOSED (see
 `docs/FINAL_OHLCV_RESEARCH_CONCLUSION.md`). The next scientific question is
@@ -101,14 +106,19 @@ do **not** keep adding more cross-asset features or move to a larger model on
 the same family. The next step would then be the next-ranked information class
 (derivatives/funding/open interest), evaluated under the same gate.
 
-## 6. Implementation scope (files that would change, when approved)
+## 6. Implementation scope (IMPLEMENTED in Phase 7)
 
-- `kronos_trading/cross_asset.py` (NEW): cross-asset feature builder with
-  strict temporal alignment + HAR-linear-extension walk-forward evaluator.
-- `kronos_trading/cli.py`: `cross-asset` subcommand.
-- `tests/test_cross_asset.py` (NEW): alignment, forward-fill prohibition,
-  leakage, deterministic output, identical timestamps, short/missing-history
-  safety.
-- `docs/` + `SYSTEM_STATUS.md`: record the experiment and result.
+- `kronos_trading/cross_asset.py`: cross-asset feature builder with strict
+  temporal alignment (`open time == T − step`, no forward-fill) +
+  HAR-linear-extension expanding-OLS walk-forward evaluator.
+- `kronos_trading/cli.py`: `cross-asset` subcommand
+  (`data/eval/cross_asset_volatility_report.json`).
+- `tests/test_phase7_cross_asset.py` (17 tests): timestamp alignment, no future
+  information, no forward-fill, missing-history handling, deterministic
+  coefficients/predictions, identical OOS timestamps, leakage counter,
+  gate classification.
+- `SYSTEM_STATUS.md`: Phase 7 recorded.
 
-No code is implemented in this phase; this document is the design only.
+The real-data experiment remains pending execution on the verified dataset:
+`python -m kronos_trading.cli cross-asset --db data\db\kronos_trading_verified.db
+--assets BTC/USDT ETH/USDT --timeframes 1h 4h 1d --window-size 1000`.
