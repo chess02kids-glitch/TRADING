@@ -77,15 +77,21 @@ def test_cross_features_correctness():
     idx = {name: k for k, name in enumerate(FEATURE_NAMES)}
     o_close = np.array([c.close for c in other], dtype=float)
     o_range = np.array([c.high - c.low for c in other], dtype=float)
-    o_ret = np.zeros(len(o_close)); o_ret[1:] = o_close[1:] / o_close[:-1] - 1
     for j in (30, 60, 90):
         # cross candle k = other candle at open time T_j - H = index j-1
         k = j - 1
         row = out['X'][j]
-        assert row[idx['x_nr_prev']] == pytest.approx(o_range[k] / o_close[k - 1], rel=1e-9)
-        assert row[idx['x_ret_1']] == pytest.approx(o_close[k] / o_close[k - 1] - 1, rel=1e-9)
-        assert row[idx['x_ret_22']] == pytest.approx(o_close[k] / o_close[k - 22] - 1, rel=1e-9)
-        rv = o_ret[k - 21:k + 1]
+        # cross_nr_1 = (high_other - low_other) / close_other  (OWN close)
+        assert row[idx['x_nr_prev']] == pytest.approx(o_range[k] / o_close[k], rel=1e-9)
+        # cross_ret1 = log(close_other[t]/close_other[t-1])
+        assert row[idx['x_ret_1']] == pytest.approx(
+            np.log(o_close[k] / o_close[k - 1]), rel=1e-9)
+        # cross_ret22 = log(close_other[t]/close_other[t-22])
+        assert row[idx['x_ret_22']] == pytest.approx(
+            np.log(o_close[k] / o_close[k - 22]), rel=1e-9)
+        # cross_rv22 = std of 22 log returns ending at t (same convention as code)
+        logret = np.zeros(len(o_close)); logret[1:] = np.log(o_close[1:] / o_close[:-1])
+        rv = logret[k - 21:k + 1]
         assert row[idx['x_rv_22']] == pytest.approx(np.std(rv, ddof=1), rel=1e-6)
 
 
@@ -252,50 +258,65 @@ def test_run_cross_asset_empty_safe():
 # --------------------------------------------------------------------------- #
 # Gate classification
 # --------------------------------------------------------------------------- #
-def _record(series='BTC/USDT', timeframe='1h', window='recent', sample_size=100,
-            nmae=True, mae=True, leaks=0):
-    return {'series': series, 'timeframe': timeframe, 'window': window,
-            'sample_size': sample_size, 'low_power': sample_size < 30,
-            'cross_har_nmae_winner': nmae, 'cross_har_mae_winner': mae,
-            'leaks': leaks}
+def _record(asset='BTC/USDT', timeframe='1h', window='recent', sample_size=100,
+            nmae=True, nrmse=True, mae=True, leaks=0):
+    return {'asset': asset, 'series': asset, 'timeframe': timeframe,
+            'window': window, 'sample_size': sample_size,
+            'low_power': sample_size < 30,
+            'cross_har_nmae_winner': nmae, 'cross_har_nrmse_winner': nrmse,
+            'cross_har_mae_winner': mae, 'leaks': leaks}
+
+
+def _full_records(nmae=True, nrmse=True, mae=True, leaks=0):
+    # BTC and ETH each win all 6 primary windows (1h+4h x 3 windows)
+    recs = []
+    for asset in ('BTC/USDT', 'ETH/USDT'):
+        for tf in ('1h', '4h'):
+            for w in ('older', 'middle', 'recent'):
+                recs.append(_record(asset=asset, timeframe=tf, window=w,
+                                    nmae=nmae, nrmse=nrmse, mae=mae, leaks=leaks))
+    return recs
 
 
 def test_cross_gate_classification():
-    # two assets x three windows each, all winning
-    recs = [_record(series=s, window=w)
-            for s in ('BTC/USDT', 'ETH/USDT')
-            for w in ('older', 'middle', 'recent')]
-    recs = [{**r, 'timeframe': '1h'} for r in recs]
+    recs = _full_records()
     gate = evaluate_cross_gate(recs)
     c = gate['criteria']
-    assert c['c1_window_breadth'] is True
-    assert c['c2_asset_breadth'] is True
-    assert c['c3_raw_consistent'] is True
-    assert c['c6_no_leakage'] is True
-    assert c['c7_not_single_period_window'] is True
-    assert c['c4_statistical_support'] is None  # filled by caller
-    assert c['c5_regime_breadth'] is None
-    assert c['c7b_not_single_period_extreme'] is None
+    assert c['c1_window_breadth_per_asset'] is True
+    assert c['c2_both_assets'] is True
+    assert c['c3_rmse_pattern'] is True
+    assert c['c4_raw_survives'] is True
+    assert c['c7_no_leakage'] is True
+    assert c['c5_statistical_support'] is None  # filled by caller
+    assert c['c6_regime_breadth'] is None
 
-    full = dict(c, c4_statistical_support=True, c5_regime_breadth=True,
-                c7b_not_single_period_extreme=True)
+    full = dict(c, c5_statistical_support=True, c6_regime_breadth=True)
     assert classify_cross_gate(full) == 'PASS'
-    assert classify_cross_gate(dict(full, c4_statistical_support=False)) == 'B'
-    losing = dict(full, c1_window_breadth=False)
+    assert classify_cross_gate(dict(full, c5_statistical_support=False)) == 'B'
+    losing = dict(full, c1_window_breadth_per_asset=False)
     assert classify_cross_gate(losing) == 'C'
 
 
 def test_cross_gate_leakage_and_asset_breadth():
-    recs = [_record(leaks=1) for _ in range(12)]
-    recs = [{**r, 'timeframe': '1h'} for r in recs]
+    recs = _full_records(leaks=1)
     gate = evaluate_cross_gate(recs)
-    assert gate['criteria']['c6_no_leakage'] is False
+    assert gate['criteria']['c7_no_leakage'] is False
 
-    # only one asset wins -> c2 false
-    recs2 = [_record(series='BTC/USDT') for _ in range(12)]
-    recs2 = [{**r, 'timeframe': '1h'} for r in recs2]
+    # only BTC wins -> C1 true (BTC >=2/3) but C2 false (ETH fails)
+    recs2 = []
+    for asset in ('BTC/USDT', 'ETH/USDT'):
+        for tf in ('1h', '4h'):
+            for w in ('older', 'middle', 'recent'):
+                recs2.append(_record(asset=asset, timeframe=tf, window=w,
+                                     nmae=(asset == 'BTC/USDT'),
+                                     nrmse=(asset == 'BTC/USDT'),
+                                     mae=(asset == 'BTC/USDT')))
     gate2 = evaluate_cross_gate(recs2)
-    assert gate2['criteria']['c2_asset_breadth'] is False
+    assert gate2['criteria']['c1_window_breadth_per_asset'] is True
+    assert gate2['criteria']['c2_both_assets'] is False
+    assert classify_cross_gate(dict(gate2['criteria'],
+                                    c5_statistical_support=False,
+                                    c6_regime_breadth=False)) == 'B'
 
 
 def test_cross_gate_excludes_daily_and_low_power():
@@ -303,3 +324,14 @@ def test_cross_gate_excludes_daily_and_low_power():
     gate = evaluate_cross_gate(recs)
     assert gate['eligible_windows'] == 0
     assert gate['overall'] == 'pending'
+
+
+def test_frozen_har_specification_unchanged():
+    """The frozen single-asset HAR benchmark constants and formula are intact."""
+    from kronos_trading.volatility_baselines import (EWMA_SPAN, HAR_MIN_TRAIN,
+                                                     ROLLING_WINDOWS, har_forecast)
+    assert HAR_MIN_TRAIN == 24
+    assert ROLLING_WINDOWS == (5, 22)
+    assert EWMA_SPAN == 22
+    # constant series recovers the constant exactly (formula intact)
+    assert har_forecast([3.0] * 50) == pytest.approx(3.0)

@@ -53,7 +53,7 @@ MIN_HISTORY = 24       # target-feature warm-up (covers mean22 + 22-step returns
 MIN_TRAIN_ROWS = 24    # minimum expanding-OLS training rows (matches frozen HAR)
 REFIT_EVERY = 1        # refit OLS every prediction step (matches frozen HAR)
 PRIMARY_ALPHA = 0.05   # single primary comparison (cross vs HAR) -> no correction
-EXTREME_QUANTILE = 0.99  # for the extreme-period sensitivity check (c7b)
+EXTREME_QUANTILE = 0.99  # diagnostic: extreme-period sensitivity check (not a gate criterion)
 
 FEATURE_NAMES = [
     'har_range_prev', 'har_mean5', 'har_mean22',
@@ -64,10 +64,10 @@ FEATURE_DESCRIPTIONS = {
     'har_range_prev': 'target asset previous raw range (high-low)',
     'har_mean5': 'target asset mean raw range over last 5',
     'har_mean22': 'target asset mean raw range over last 22',
-    'x_nr_prev': 'OTHER asset previous normalized range (high-low)/close',
-    'x_rv_22': 'OTHER asset trailing 22-bar realized volatility (std of close-to-close returns)',
-    'x_ret_1': 'OTHER asset 1-bar return',
-    'x_ret_22': 'OTHER asset 22-bar return',
+    'x_nr_prev': 'OTHER asset previous normalized range (high_other[t]-low_other[t])/close_other[t]',
+    'x_rv_22': 'OTHER asset trailing 22-bar realized volatility (std of 22 log returns ending at t)',
+    'x_ret_1': 'OTHER asset 1-bar log return log(close_other[t]/close_other[t-1])',
+    'x_ret_22': 'OTHER asset 22-bar log return log(close_other[t]/close_other[t-22])',
 }
 
 VERDICT_MEANING = {
@@ -120,8 +120,10 @@ def build_aligned_features(target: List[Candle], other: List[Candle],
     o_range = o_high - o_low
     o_ts = np.array([c.timestamp_ms for c in other], dtype='int64')
     o_ts_to_idx = {int(t): i for i, t in enumerate(o_ts)}
-    o_ret = np.zeros(len(o_close), dtype=float)
-    o_ret[1:] = o_close[1:] / o_close[:-1] - 1.0
+    # log close-to-close returns of the other asset (used for ret1/ret22/rv22)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        o_logret = np.zeros(len(o_close), dtype=float)
+        o_logret[1:] = np.log(o_close[1:] / o_close[:-1])
 
     def rolling_mean(a, w, end):  # mean of a[end-w:end]
         if end < w:
@@ -146,11 +148,15 @@ def build_aligned_features(target: List[Candle], other: List[Candle],
             continue
         if k < 22:  # need 22-bar realized vol + 22-step return
             continue
-        x_nr_prev = o_range[k] / o_close[k - 1]
-        rv_window = o_ret[k - 21:k + 1]  # 22 close-to-close returns ending at k
+        # cross_nr_1[t] = (high_other[t] - low_other[t]) / close_other[t]  (own close)
+        x_nr_prev = o_range[k] / o_close[k]
+        # cross_rv22[t] = std of the other asset's 22 log returns ending at t
+        rv_window = o_logret[k - 21:k + 1]
         x_rv_22 = float(rv_window.std(ddof=1)) if len(rv_window) >= 2 else np.nan
-        x_ret_1 = o_close[k] / o_close[k - 1] - 1.0
-        x_ret_22 = o_close[k] / o_close[k - 22] - 1.0
+        # cross_ret1[t]  = log(close_other[t] / close_other[t-1])
+        x_ret_1 = o_logret[k]
+        # cross_ret22[t] = log(close_other[t] / close_other[t-22])
+        x_ret_22 = float(np.log(o_close[k] / o_close[k - 22]))
 
         row = [har_prev, har_mean5, har_mean22, x_nr_prev, x_rv_22,
                x_ret_1, x_ret_22]
@@ -323,11 +329,31 @@ def _window_analysis(vrows: List[VolatilityRow],
 # Success gate (pre-registered)
 # --------------------------------------------------------------------------- #
 def classify_cross_gate(criteria: Dict[str, Any]) -> str:
+    """Map the pre-registered Phase 7 criteria to the verdict.
+
+    PASS = all seven criteria hold; B = C1 holds but not all criteria; C = C1
+    fails (cross-asset does not broadly beat HAR on normalized MAE).
+    """
     if all(v is True for v in criteria.values()):
         return 'PASS'
-    if criteria.get('c1_window_breadth') is True:
+    if criteria.get('c1_window_breadth_per_asset') is True:
         return 'B'
     return 'C'
+
+
+def _per_asset_wins(records: List[Dict[str, Any]], field: str) -> Dict[str, List[bool]]:
+    wins: Dict[str, List[bool]] = {}
+    for r in records:
+        wins.setdefault(r['asset'], []).append(r[field])
+    return wins
+
+
+def _asset_beats_2of3(records: List[Dict[str, Any]], field: str,
+                      asset: str) -> bool:
+    """True iff ``asset`` wins (>= 2 of its 3 windows) on ``field``."""
+    wins = [r[field] for r in records
+            if r['asset'] == asset and r['timeframe'] in NONDAILY_TIMEFRAMES]
+    return len(wins) >= 3 and sum(wins) >= 2
 
 
 def evaluate_cross_gate(records: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -337,16 +363,18 @@ def evaluate_cross_gate(records: List[Dict[str, Any]]) -> Dict[str, Any]:
     gate: Dict[str, Any] = {
         'eligible_windows': n,
         'definition': {
-            'c1': 'cross beats HAR on normalized MAE in > half of primary windows',
-            'c2': 'improvement appears across more than one target asset '
-                  '(BTC and ETH each win >=2 of their 6 primary windows)',
-            'c3': 'raw-range result is consistent (cross beats HAR raw MAE in '
-                  '> half of windows)',
-            'c4': 'pooled DM (cross vs HAR, normalized) p<0.05 and cross wins',
-            'c5': 'benefit not isolated to one regime (cross wins >=2 of 3 regimes)',
-            'c6': 'no look-ahead / leakage (leaks == 0 everywhere)',
-            'c7': 'not caused by a single extreme period (>=2 of 3 window '
-                  'positions AND DM sign survives removing the top-1% extremes)',
+            'C1': 'cross beats HAR on normalized MAE in >=2 of 3 windows for '
+                  'BTC AND/OR ETH',
+            'C2': 'improvement not confined to one asset (both BTC AND ETH show '
+                  '>=2 of 3 normalized-MAE wins)',
+            'C3': 'cross beats HAR on normalized RMSE in broadly the same '
+                  'pattern (both assets >=2 of 3)',
+            'C4': 'improvement survives raw-range evaluation (cross beats HAR on '
+                  'raw MAE in > half of primary windows)',
+            'C5': 'pooled DM (cross vs HAR, normalized) p<0.05 and the loss '
+                  'difference favors cross',
+            'C6': 'benefit appears in >=2 of 3 volatility regimes',
+            'C7': 'no look-ahead / leakage (leaks == 0 everywhere)',
         },
         'criteria': {},
     }
@@ -357,32 +385,25 @@ def evaluate_cross_gate(records: List[Dict[str, Any]]) -> Dict[str, Any]:
         gate['note'] = 'no eligible windows'
         return gate
 
-    c1 = sum(1 for r in eligible if r['cross_har_nmae_winner']) > 0.5 * n
-    c3 = sum(1 for r in eligible if r['cross_har_mae_winner']) > 0.5 * n
-    c6 = all(r['leaks'] == 0 for r in eligible)
+    btc_nmae = _asset_beats_2of3(eligible, 'cross_har_nmae_winner', 'BTC/USDT')
+    eth_nmae = _asset_beats_2of3(eligible, 'cross_har_nmae_winner', 'ETH/USDT')
+    btc_nrmse = _asset_beats_2of3(eligible, 'cross_har_nrmse_winner', 'BTC/USDT')
+    eth_nrmse = _asset_beats_2of3(eligible, 'cross_har_nrmse_winner', 'ETH/USDT')
 
-    # c2: more than one asset - each target asset wins >=2 of its 6 windows
-    asset_wins: Dict[str, List[bool]] = {}
-    for r in eligible:
-        asset_wins.setdefault(r['series'], []).append(r['cross_har_nmae_winner'])
-    c2 = (len(asset_wins) >= 2
-          and all(sum(w) >= 2 for w in asset_wins.values()))
-
-    # c7a: >=2 of 3 window positions show cross winning (aggregated)
-    window_wins: Dict[str, List[bool]] = {}
-    for r in eligible:
-        window_wins.setdefault(r['window'], []).append(r['cross_har_nmae_winner'])
-    c7a = sum(1 for w in window_wins.values() if sum(w) > 0) >= 2
+    c1 = btc_nmae or eth_nmae
+    c2 = btc_nmae and eth_nmae
+    c3 = btc_nrmse and eth_nrmse
+    c4 = sum(1 for r in eligible if r['cross_har_mae_winner']) > 0.5 * n
+    c7 = all(r['leaks'] == 0 for r in eligible)
 
     gate['criteria'] = {
-        'c1_window_breadth': bool(c1),
-        'c2_asset_breadth': bool(c2),
-        'c3_raw_consistent': bool(c3),
-        'c4_statistical_support': None,  # filled by caller (pooled DM)
-        'c5_regime_breadth': None,       # filled by caller (pooled regimes)
-        'c6_no_leakage': bool(c6),
-        'c7_not_single_period_window': bool(c7a),  # c7b filled by caller
-        'c7b_not_single_period_extreme': None,
+        'c1_window_breadth_per_asset': bool(c1),
+        'c2_both_assets': bool(c2),
+        'c3_rmse_pattern': bool(c3),
+        'c4_raw_survives': bool(c4),
+        'c5_statistical_support': None,  # filled by caller (pooled DM)
+        'c6_regime_breadth': None,       # filled by caller (pooled regimes)
+        'c7_no_leakage': bool(c7),
     }
     return gate
 
@@ -390,12 +411,12 @@ def evaluate_cross_gate(records: List[Dict[str, Any]]) -> Dict[str, Any]:
 # --------------------------------------------------------------------------- #
 # Experiment
 # --------------------------------------------------------------------------- #
-def _window_record(series: str, timeframe: str, window: str,
+def _window_record(asset: str, series: str, timeframe: str, window: str,
                    analysis: Dict[str, Any], leaks: int) -> Dict[str, Any]:
     sn = analysis['systems_normalized']
     sr = analysis['systems_raw']
     return {
-        'series': series, 'timeframe': timeframe, 'window': window,
+        'asset': asset, 'series': series, 'timeframe': timeframe, 'window': window,
         'sample_size': analysis['sample_size'], 'low_power': analysis['low_power'],
         'cross_norm_mae': sn['cross']['mae'], 'har_norm_mae': sn['har']['mae'],
         'cross_norm_rmse': sn['cross']['rmse'], 'har_norm_rmse': sn['har']['rmse'],
@@ -447,7 +468,8 @@ def run_cross_asset(load_candles: Callable[[str, str], List[Candle]],
             analysis = _window_analysis(vrows, pred_by_ts)
             analysis['cross_missing'] = built['cross_missing']
             per_window[name] = analysis
-            rec = _window_record(series_id, timeframe, name, analysis, walk['leaks'])
+            rec = _window_record(target_sym, series_id, timeframe, name,
+                                 analysis, walk['leaks'])
             window_records.append(rec)
             if not rec['low_power'] and timeframe in NONDAILY_TIMEFRAMES:
                 gate_analyses.append((series_id, timeframe, name, analysis, vrows,
@@ -524,17 +546,27 @@ def run_cross_asset(load_candles: Callable[[str, str], List[Candle]],
                               'cross_beats_har': (c_mae is not None and h_mae is not None
                                                   and c_mae < h_mae),
                               'n': len(d['actual'])}
-    c5 = sum(1 for d in regime_result.values() if d['cross_beats_har'] is True) >= 2
+    c6 = sum(1 for d in regime_result.values() if d['cross_beats_har'] is True) >= 2
 
-    # c4: pooled DM (cross vs HAR, normalized).
+    # c5: pooled DM (cross vs HAR, normalized).
     dm_cross_har = pooled['cross_vs_har']
-    c4 = (dm_cross_har['p_value'] is not None
+    c5 = (dm_cross_har['p_value'] is not None
           and dm_cross_har['p_value'] < PRIMARY_ALPHA
           and dm_cross_har['mean_loss_diff'] is not None
           and dm_cross_har['mean_loss_diff'] < 0)
 
-    # c7b: extreme-period sensitivity - remove top-1% largest |actual_norm|
-    # and check the pooled DM sign for cross-vs-HAR does not flip.
+    # pooled paired tests for the primary comparison (cross vs HAR)
+    pooled_diff = [a - b for a, b in zip(c_err_har, h_err)]
+    pooled_primary = {
+        'dm': dm_cross_har,
+        'bootstrap_mean_diff_ci': circular_block_bootstrap_mean_ci(pooled_diff),
+        'wilcoxon_p_value': wilcoxon_signed_rank(pooled_diff)['p_value'],
+        'wilcoxon_n_nonzero': wilcoxon_signed_rank(pooled_diff)['n_nonzero'],
+    }
+
+    # c7b (diagnostic only, NOT a gate criterion in the new C1-C7 spec):
+    # extreme-period sensitivity - remove top-1% largest |actual_norm| and check
+    # the pooled DM sign for cross-vs-HAR does not flip.
     arr_a = np.array(all_actual, dtype=float)
     arr_c = np.array(all_cross, dtype=float)
     arr_h = np.array(all_har, dtype=float)
@@ -547,8 +579,6 @@ def run_cross_asset(load_candles: Callable[[str, str], List[Candle]],
             a_name='cross', b_name='har')
     else:
         dm_trim = {'mean_loss_diff': None, 'p_value': None, 'winner': None}
-    c7b = (dm_trim.get('mean_loss_diff') is not None
-           and dm_trim['mean_loss_diff'] < 0)
 
     # shrinkage (pooled dispersion of cross predictions).
     std_pred = _std(all_cross) if len(all_cross) > 1 else None
@@ -567,11 +597,26 @@ def run_cross_asset(load_candles: Callable[[str, str], List[Candle]],
              'std': float(arr[:, k].std())}
             for k in range(arr.shape[1])]
 
+    # per-asset summary (BTC / ETH across their 1h+4h primary windows)
+    per_asset_summary = {}
+    for asset in sorted({r['asset'] for r in window_records}):
+        recs = [r for r in window_records
+                if r['asset'] == asset and not r['low_power']
+                and r['timeframe'] in NONDAILY_TIMEFRAMES]
+        per_asset_summary[asset] = {
+            'n_primary_windows': len(recs),
+            'nmae_wins': sum(1 for r in recs if r['cross_har_nmae_winner']),
+            'nrmse_wins': sum(1 for r in recs if r['cross_har_nrmse_winner']),
+            'raw_mae_wins': sum(1 for r in recs if r['cross_har_mae_winner']),
+            'mean_nmae_improvement_pct': (
+                _fmean([r['improvement_vs_har_nmae_pct'] for r in recs
+                        if r['improvement_vs_har_nmae_pct'] is not None])),
+        }
+
     gate = evaluate_cross_gate(window_records)
     if gate.get('overall') != 'pending':
-        gate['criteria']['c4_statistical_support'] = bool(c4)
-        gate['criteria']['c5_regime_breadth'] = bool(c5)
-        gate['criteria']['c7b_not_single_period_extreme'] = bool(c7b)
+        gate['criteria']['c5_statistical_support'] = bool(c5)
+        gate['criteria']['c6_regime_breadth'] = bool(c6)
         gate['overall'] = 'pass' if all(v is True for v in gate['criteria'].values()) else 'fail'
         gate['verdict'] = classify_cross_gate(gate['criteria'])
         gate['verdict_meaning'] = VERDICT_MEANING[gate['verdict']]
@@ -608,6 +653,8 @@ def run_cross_asset(load_candles: Callable[[str, str], List[Candle]],
         'series': series_output,
         'window_records': window_records,
         'pooled_statistics': pooled,
+        'pooled_primary': pooled_primary,
+        'per_asset_summary': per_asset_summary,
         'regime_pooled': regime_result,
         'cross_adequacy': {
             'pooled_dispersion_ratio': pooled_dispersion,

@@ -3,9 +3,10 @@
 **Date:** 2026-08-14 · **Status:** DESIGNED → IMPLEMENTED (Phase 7 cross-asset experiment)
 
 > Update: the cross-asset experiment designed below has been implemented as
-> Phase 7 (`kronos_trading/cross_asset.py`, CLI `cross-asset`). The design,
-> gate and STOP conditions below are unchanged; the implementation follows them
-> exactly. The real-data run is pending on the verified dataset.
+> Phase 7 (`kronos_trading/cross_asset.py`, CLI `cross-asset`). The precise
+> feature definitions, C1–C7 gate and STOP conditions are specified in
+> `docs/CROSS_ASSET_METHODOLOGY.md`. The real-data run is pending on the
+> verified dataset.
 
 The OHLCV-only model-complexity branch is CLOSED (see
 `docs/FINAL_OHLCV_RESEARCH_CONCLUSION.md`). The next scientific question is

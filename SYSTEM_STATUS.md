@@ -30,8 +30,10 @@
   next branch is NEW INFORMATION (cross-asset), see
   `docs/NEXT_RESEARCH_BRANCH.md`.
 - Phase 7 (cross-asset information): IMPLEMENTED — HAR + linear cross-asset
-  extension (expanding past-only OLS) vs frozen HAR; real run pending on the
-  verified dataset
+  extension (expanding past-only OLS, 4 other-asset features: normalized range
+  (own close), 22-bar realized vol of log returns, 1-bar and 22-bar log
+  returns) vs frozen HAR; pre-registered C1–C7 gate; real run pending on the
+  verified dataset (`docs/CROSS_ASSET_METHODOLOGY.md`)
 
 ## Environment
 
@@ -294,7 +296,7 @@ The evaluator logic was validated here with a deterministic test double
 - window selection + documented timestamps;
 - CLI requires the real model (no mock fallback).
 
-Full suite: **217 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
+Full suite: **218 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
 that require the model; warning = pre-existing `PytestReturnNotNoneWarning`).
 
 ### To run the real-data robustness matrix on the target machine
@@ -319,7 +321,7 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 
 ## Testing
 
-- Full suite: `217 passed, 3 skipped, 1 warning`
+- Full suite: `218 passed, 3 skipped, 1 warning`
 - Phase 2 audit: `7 passed`
 - Offline system: `3 passed`
 - Historical-range regression: `14 passed`
@@ -331,7 +333,7 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 - Phase 5c (classical volatility): `13 passed`
 - Phase 5c audit (DM labels + c6 gate): `11 passed`
 - Phase 6 (ML vs HAR): `16 passed`
-- Phase 7 (cross-asset): `17 passed`
+- Phase 7 (cross-asset): `18 passed`
 
 ## Safety
 
