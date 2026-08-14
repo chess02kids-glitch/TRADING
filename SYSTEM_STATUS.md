@@ -38,8 +38,10 @@
   `abs_funding_mean_24h` from settled Binance USD-M funding rates) as a linear
   HAR extension vs frozen HAR, point-in-time (funding_time ≤ prediction
   timestamp, 24h window, 8h staleness → skip, no forward-fill), pre-registered
-  C1–C7 gate. No open interest, no basis/premium. Real run pending funding data
-  availability on the target machine (`docs/DERIVATIVES_METHODOLOGY.md`)
+  C1–C7 gate. Funding acquisition is PAGINATED (chronological `lastTime+1ms`
+  advance, dedup, sort — no 1000-row truncation). No open interest, no
+  basis/premium. Real run pending funding data availability on the target
+  machine (`docs/DERIVATIVES_METHODOLOGY.md`)
 
 ## Environment
 
@@ -302,7 +304,7 @@ The evaluator logic was validated here with a deterministic test double
 - window selection + documented timestamps;
 - CLI requires the real model (no mock fallback).
 
-Full suite: **237 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
+Full suite: **249 passed, 3 skipped, 1 warning** (3 skips = real-weight tests
 that require the model; warning = pre-existing `PytestReturnNotNoneWarning`).
 
 ### To run the real-data robustness matrix on the target machine
@@ -327,7 +329,7 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 
 ## Testing
 
-- Full suite: `237 passed, 3 skipped, 1 warning`
+- Full suite: `249 passed, 3 skipped, 1 warning`
 - Phase 2 audit: `7 passed`
 - Offline system: `3 passed`
 - Historical-range regression: `14 passed`
@@ -341,6 +343,7 @@ Results are printed and saved as machine-readable JSON under `data/eval/`.
 - Phase 6 (ML vs HAR): `16 passed`
 - Phase 7 (cross-asset): `18 passed`
 - Phase 8 (F-01 funding-only): `19 passed`
+- Phase 8 (F-01 pagination): `12 passed`
 
 ## Safety
 

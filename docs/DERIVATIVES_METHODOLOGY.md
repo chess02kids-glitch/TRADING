@@ -58,8 +58,16 @@ No ML, no hyperparameter search, no feature selection, no tuning.
 Public Binance USD-M market-data endpoint only (no API key, no trading/order
 endpoints, no credentials): `GET /fapi/v1/fundingRate` (settled funding).
 Stored under `data/derivatives/` (gitignored) via
-`fetch_funding_only(symbol, start_ms)`. The open-interest and premium-index
-fetchers remain as documented FUTURE utilities and are never called by F-01.
+`fetch_funding_only(symbol, start_ms)`.
+
+**Pagination:** Binance returns at most 1000 rows per request. The fetcher
+paginates chronologically — each page advances to `latest fundingTime + 1 ms`
+— until the requested range is exhausted or the endpoint returns no rows, then
+deduplicates by funding timestamp and sorts chronologically. No silent
+truncation, no forward-fill, no synthesized observations. For ~730 days this
+yields ~2190 settled 8h funding observations (not 1000). The open-interest and
+premium-index fetchers remain as documented FUTURE utilities and are never
+called by F-01.
 
 ## Evaluation windows
 

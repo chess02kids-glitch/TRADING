@@ -50,23 +50,64 @@ def _http_get(url: str, params: Dict[str, Any], timeout: int = 20) -> Any:
 
 
 def fetch_funding_rate(symbol: str = "BTCUSDT", start_ms: int = 0,
+                       end_ms: Optional[int] = None,
                        limit: int = 1000) -> List[Dict[str, Any]]:
-    """Funding-rate history (settled). Each row: fundingTime, fundingRate."""
-    rows = _http_get(FAPI_BASE + "/fapi/v1/fundingRate",
-                     {"symbol": symbol, "startTime": start_ms, "limit": limit})
-    out = []
-    for r in rows:
-        out.append({
-            "timestamp_ms": int(r["fundingTime"]),
-            "funding_rate": float(r["fundingRate"]),
-            "kind": "funding",
-        })
-    return out
+    """Paginated settled funding-rate history (Binance USD-M).
+
+    Binance's ``GET /fapi/v1/fundingRate`` returns at most ``limit`` (max 1000)
+    rows per request. This fetches the COMPLETE history for ``[start_ms, end_ms]``
+    by advancing chronologically:
+
+    1. request from ``start_ms`` with ``limit`` rows;
+    2. read the returned funding timestamps;
+    3. advance the next request to (latest returned funding time + 1 ms);
+    4. continue until the requested range is exhausted or the endpoint returns
+       no rows.
+
+    Guarantees: no silent truncation at 1000, no duplicate observations across
+    pages (dedup by funding timestamp), chronological ordering, no future
+    observations (each returned ``fundingTime`` must be within
+    ``[start_ms, end_ms]``), no forward-fill/synthesis.
+
+    ``end_ms`` defaults to the current time (point-in-time ceiling).
+    """
+    end_ms = end_ms if end_ms is not None else int(time.time() * 1000)
+    limit = max(1, min(int(limit), 1000))
+
+    collected: Dict[int, float] = {}
+    cursor = start_ms
+    seen_max: Optional[int] = None
+    while cursor <= end_ms:
+        page = _http_get(FAPI_BASE + "/fapi/v1/fundingRate",
+                         {"symbol": symbol, "startTime": cursor,
+                          "endTime": end_ms, "limit": limit})
+        if not page:
+            break
+
+        page_ts: List[int] = []
+        for r in page:
+            ts = int(r["fundingTime"])
+            if start_ms <= ts <= end_ms:  # point-in-time: never future, never pre-start
+                collected[ts] = float(r["fundingRate"])
+                page_ts.append(ts)
+        if not page_ts:
+            break
+
+        last_ts = max(page_ts)
+        if seen_max is not None and last_ts <= seen_max:
+            # no forward progress (endpoint returned only already-seen rows)
+            break
+        seen_max = last_ts
+        cursor = last_ts + 1
+
+    return [{"timestamp_ms": ts, "funding_rate": rate, "kind": "funding"}
+            for ts, rate in sorted(collected.items())]
 
 
-def fetch_funding_only(symbol: str, start_ms: int) -> Dict[str, List[Dict[str, Any]]]:
-    """F-01 data acquisition: settled funding history only."""
-    return {"funding": fetch_funding_rate(symbol, start_ms)}
+def fetch_funding_only(symbol: str, start_ms: int,
+                       end_ms: Optional[int] = None) -> Dict[str, List[Dict[str, Any]]]:
+    """F-01 data acquisition: complete settled funding history only."""
+    return {"funding": fetch_funding_rate(symbol, start_ms, end_ms=end_ms)}
 
 
 # --------------------------------------------------------------------------- #
