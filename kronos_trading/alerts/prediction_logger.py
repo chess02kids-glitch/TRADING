@@ -97,7 +97,16 @@ class DBWrapper:
             self.url = self.url.strip("\"'")
             if not self.url.startswith("postgres://") and not self.url.startswith("postgresql://"):
                 self.url = "postgresql://" + self.url
-            self.conn = psycopg.connect(self.url, autocommit=True, row_factory=dict_row)
+            self.conn = psycopg.connect(
+                self.url,
+                autocommit=True,
+                row_factory=dict_row,
+                prepare_threshold=None,
+                keepalives=1,
+                keepalives_idle=5,
+                keepalives_interval=2,
+                keepalives_count=3
+            )
         else:
             self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
             self.conn.row_factory = sqlite3.Row
