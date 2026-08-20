@@ -157,7 +157,9 @@ if ($DryRun) {
 }
 
 # Remove any existing task with the same name (ignore "not found" errors).
-schtasks /Delete /TN $TaskName /F 2>$null | Out-Null
+try {
+    schtasks /Delete /TN $TaskName /F 2>$null | Out-Null
+} catch {}
 
 schtasks /Create /TN $TaskName /XML $tmp /F
 if ($LASTEXITCODE -ne 0) {

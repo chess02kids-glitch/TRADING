@@ -1,0 +1,16 @@
+app = "har-alert-bot"
+primary_region = "sin"
+
+[build]
+  [build.args]
+    PYTHON_VERSION = "3.10"
+
+[env]
+  PYTHONUNBUFFERED = "1"
+
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+
+[processes]
+  bot = "python scripts/run_alert_bot.py"
