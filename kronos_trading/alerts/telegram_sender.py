@@ -50,6 +50,10 @@ from kronos_trading.alerts.breakout_detector import (
     format_calibration_message,
 )
 from kronos_trading.alerts.har_forecaster import HarForecast
+from kronos_trading.alerts.market_context import (
+    MarketContext,
+    format_context_section,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -169,24 +173,27 @@ def send_forecast(
     btc_forecast: HarForecast,
     eth_forecast: HarForecast,
     timestamp: str,
+    context: MarketContext | None = None,
 ) -> SendResult:
     """Build and send the hourly HAR volatility forecast (plain text)."""
-    btc_regime = getattr(btc_forecast, "regime", None) or "N/A"
-    eth_regime = getattr(eth_forecast, "regime", None) or "N/A"
-    text = "\n".join([
-        "🔮 HAR Volatility Forecast",
-        "━" * 20,
-        "BTC/USDT 1h",
-        f"  Predicted range: ${btc_forecast.predicted_range:.2f}",
-        f"  Regime: {btc_regime}",
-        "",
-        "ETH/USDT 1h",
-        f"  Predicted range: ${eth_forecast.predicted_range:.2f}",
-        f"  Regime: {eth_regime}",
-        "",
-        f"⏰ {timestamp} UTC",
-        "📊 HAR model (validated p<1e-26)",
-    ])
+    context_block = ""
+    if context is not None:
+        section = format_context_section(context)
+        if section:
+            context_block = f"\n{section}"
+
+    text = f"""🔮 HAR Volatility Forecast
+━━━━━━━━━━━━━━━━━━━━
+BTC/USDT 1h
+  Predicted range: ${btc_forecast.predicted_range:.2f}
+  Regime: {btc_forecast.regime or "N/A"}
+
+ETH/USDT 1h
+  Predicted range: ${eth_forecast.predicted_range:.2f}
+  Regime: {eth_forecast.regime or "N/A"}{context_block}
+
+⏰ {timestamp} UTC
+📊 HAR model (validated p<1e-26)"""
     # Plain text message: no HTML parsing needed.
     return send_message(config, text, parse_mode=None)
 

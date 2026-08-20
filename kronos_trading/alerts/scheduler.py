@@ -63,6 +63,10 @@ from kronos_trading.alerts.har_forecaster import (
     fetch_candles,
     predict_next_range,
 )
+from kronos_trading.alerts.market_context import (
+    get_market_context,
+    MarketContext,
+)
 from kronos_trading.alerts.prediction_logger import (
     DEFAULT_DB_PATH,
     get_pending_predictions,
@@ -343,13 +347,33 @@ def run_single_cycle(
             logger.warning("Cycle %s: prediction failed for %s: %s",
                            cycle_ts, asset, exc)
 
+    # Fetch market context
+    # Optional enrichment — never blocks the cycle
+    context: MarketContext | None = None
+    try:
+        context = get_market_context(timeout=8.0)
+        if context.is_complete:
+            logger.info(
+                f"Market context fetched: F&G={context.fear_greed_value}, "
+                f"BTC dom={context.btc_dominance}%"
+            )
+        else:
+            logger.warning(
+                f"Market context incomplete: {context.fetch_errors}"
+            )
+    except Exception as e:
+        logger.warning(
+            f"Market context fetch failed unexpectedly: {e}"
+        )
+        context = None
+
     # Combined forecast message (BTC + ETH by send_forecast's contract).
     try:
         if set(scheduler_config.assets) <= set(result.forecasts):
             first = result.forecasts[scheduler_config.assets[0]]
             second = result.forecasts[scheduler_config.assets[1]]
             result.send_results["forecast"] = send_forecast(
-                telegram_config, first, second, cycle_ts)
+                telegram_config, first, second, cycle_ts, context=context)
         else:
             missing = set(scheduler_config.assets) - set(result.forecasts)
             logger.warning("Cycle %s: forecast message skipped - missing "
