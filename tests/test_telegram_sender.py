@@ -22,6 +22,7 @@ from kronos_trading.alerts.breakout_detector import (
     check_breakout,
 )
 from kronos_trading.alerts.har_forecaster import HarForecast
+from kronos_trading.alerts.market_context import MarketContext
 from kronos_trading.alerts.telegram_sender import (
     API_BASE_URL,
     SEND_MESSAGE_METHOD,
@@ -357,3 +358,41 @@ class TestLifecycleMessages:
                    return_value=make_mock_response(ok=True)):
             result = send_startup_message(make_config())
         assert isinstance(result, SendResult)
+
+
+def make_market_context(**overrides):
+    values = dict(
+        fear_greed_value=71, fear_greed_label="Greed", btc_dominance=54.2,
+        total_mcap_trillion=2.41, mcap_change_24h=2.3,
+        fetched_at="2024-01-15T14:00:00Z", fetch_errors=[],
+    )
+    values.update(overrides)
+    return MarketContext(**values)
+
+
+def test_send_forecast_with_complete_context():
+    with patch(f"{MODULE}.send_message", return_value=SendResult(True, 1, None, 1)) as sender:
+        send_forecast(make_config(), make_forecast(423.5, "HIGH"), make_forecast(31.2, "MEDIUM"), "15:00:00", context=make_market_context())
+    text = sender.call_args.args[1]
+    assert all(value in text for value in ("Fear & Greed", "BTC Dominance", "Global MCap", "📊 Market Context"))
+
+
+def test_send_forecast_with_none_context():
+    with patch(f"{MODULE}.send_message", return_value=SendResult(True, 1, None, 1)) as sender:
+        send_forecast(make_config(), make_forecast(), make_forecast(), "15:00:00", context=None)
+    text = sender.call_args.args[1]
+    assert "Market Context" not in text
+    assert "BTC/USDT 1h" in text and "ETH/USDT 1h" in text
+
+
+def test_send_forecast_with_incomplete_context():
+    with patch(f"{MODULE}.send_message", return_value=SendResult(True, 1, None, 1)) as sender:
+        result = send_forecast(make_config(), make_forecast(), make_forecast(), "15:00:00", context=make_market_context(fear_greed_value=None))
+    assert result.success is True
+    assert "Market Context" not in sender.call_args.args[1]
+
+
+def test_send_forecast_context_failure_safe():
+    with patch(f"{MODULE}.send_message", return_value=SendResult(True, 1, None, 1)):
+        result = send_forecast(make_config(), make_forecast(), make_forecast(), "15:00:00", context=None)
+    assert result.success is True

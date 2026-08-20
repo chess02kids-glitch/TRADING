@@ -17,6 +17,7 @@ from unittest.mock import patch
 import pytest
 
 from kronos_trading.alerts.har_forecaster import HarForecast, predict_next_range
+from kronos_trading.alerts.market_context import MarketContext
 from kronos_trading.alerts.prediction_logger import (
     DEFAULT_DB_PATH,
     get_pending_predictions,
@@ -405,3 +406,41 @@ class TestSchedulerConfig:
         assert cfg.breakout_threshold == 2.0
         assert cfg.calibration_interval_hours == 24
         assert cfg.db_path == DEFAULT_DB_PATH
+
+
+def make_complete_context(**overrides):
+    values = dict(fear_greed_value=71, fear_greed_label="Greed", btc_dominance=54.2,
+                  total_mcap_trillion=2.41, mcap_change_24h=2.3,
+                  fetched_at="2024-01-15T14:00:00Z", fetch_errors=[])
+    values.update(overrides)
+    return MarketContext(**values)
+
+
+def test_cycle_fetches_market_context(tmp_path):
+    cfg = make_scheduler_config(tmp_path)
+    with patch(f"{MOD}.fetch_candles", return_value=make_fake_candles()), patch(f"{MOD}.send_forecast", return_value=ok_send()), patch(f"{MOD}.get_market_context", return_value=make_complete_context()) as fetch:
+        run_single_cycle(make_telegram_config(), cfg, now=BASE + timedelta(hours=15, seconds=30))
+    fetch.assert_called_once_with(timeout=8.0)
+
+
+def test_cycle_sends_forecast_with_context(tmp_path):
+    cfg = make_scheduler_config(tmp_path)
+    context = make_complete_context()
+    with patch(f"{MOD}.fetch_candles", return_value=make_fake_candles()), patch(f"{MOD}.send_forecast", return_value=ok_send()) as sender, patch(f"{MOD}.get_market_context", return_value=context):
+        run_single_cycle(make_telegram_config(), cfg, now=BASE + timedelta(hours=15, seconds=30))
+    assert sender.call_args.kwargs["context"] is context
+
+
+def test_cycle_continues_if_context_fails(tmp_path):
+    cfg = make_scheduler_config(tmp_path)
+    with patch(f"{MOD}.fetch_candles", return_value=make_fake_candles()), patch(f"{MOD}.send_forecast", return_value=ok_send()) as sender, patch(f"{MOD}.get_market_context", side_effect=RuntimeError("unavailable")):
+        result = run_single_cycle(make_telegram_config(), cfg, now=BASE + timedelta(hours=15, seconds=30))
+    assert result.success is True
+    assert sender.call_args.kwargs["context"] is None
+
+
+def test_cycle_continues_if_context_incomplete(tmp_path):
+    cfg = make_scheduler_config(tmp_path)
+    with patch(f"{MOD}.fetch_candles", return_value=make_fake_candles()), patch(f"{MOD}.send_forecast", return_value=ok_send()), patch(f"{MOD}.get_market_context", return_value=make_complete_context(fear_greed_value=None, fear_greed_label=None, btc_dominance=None, total_mcap_trillion=None, fetch_errors=["failed"])):
+        result = run_single_cycle(make_telegram_config(), cfg, now=BASE + timedelta(hours=15, seconds=30))
+    assert result.success is True
