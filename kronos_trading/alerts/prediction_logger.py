@@ -199,19 +199,22 @@ def log_prediction(
     b0, b1, b2, b3 = coefs
 
     with closing(_connect(db_path)) as conn:
-        with conn:
-            cur = conn.execute(
-                f"""INSERT OR IGNORE INTO har_predictions
-                    ("timestamp", asset, timeframe, har_predicted_range,
-                     coef_b0, coef_b1, coef_b2, coef_b3, n_obs, regime, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (timestamp, asset, timeframe,
-                 float(forecast.predicted_range), b0, b1, b2, b3,
-                 int(forecast.n_obs), regime, _now_iso()),
-            )
-            if cur.rowcount == 0:
-                logger.info("Duplicate prediction for %s %s @ %s - returning "
-                            "existing row id", asset, timeframe, timestamp)
+        cur = conn.execute(
+            f"""INSERT OR IGNORE INTO har_predictions
+                ("timestamp", asset, timeframe, har_predicted_range,
+                 coef_b0, coef_b1, coef_b2, coef_b3, n_obs, regime, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (timestamp, asset, timeframe,
+             float(forecast.predicted_range), b0, b1, b2, b3,
+             int(forecast.n_obs), regime, _now_iso()),
+        )
+        if hasattr(conn, 'commit') and not getattr(conn, 'is_pg', False):
+            # commit manually for sqlite
+            try: conn.conn.commit()
+            except: pass
+        if cur.rowcount == 0:
+            logger.info("Duplicate prediction for %s %s @ %s - returning "
+                        "existing row id", asset, timeframe, timestamp)
         row = conn.execute(
             f'SELECT id FROM har_predictions WHERE "timestamp" = ? '
             f"AND asset = ? AND timeframe = ?",
@@ -258,29 +261,32 @@ def update_actual(
                        timeframe, timestamp)
 
     with closing(_connect(db_path)) as conn:
-        with conn:
-            row = conn.execute(
-                f'SELECT har_predicted_range FROM har_predictions '
-                f'WHERE "timestamp" = ? AND asset = ? AND timeframe = ?',
-                (timestamp, asset, timeframe),
-            ).fetchone()
-            if row is None:
-                logger.warning("update_actual: no prediction row for %s %s @ %s",
-                               asset, timeframe, timestamp)
-                return False
-            predicted = float(row["har_predicted_range"])
-            error = float(actual_range) - predicted
-            breakout = 1 if (predicted > 0.0
-                             and float(actual_range) > BREAKOUT_THRESHOLD * predicted) else 0
-            cur = conn.execute(
-                f"""UPDATE har_predictions
-                    SET actual_range = ?, prediction_error = ?,
-                        abs_prediction_error = ?, breakout_flag = ?
-                    WHERE "timestamp" = ? AND asset = ? AND timeframe = ?
-                      AND actual_range IS NULL""",
-                (float(actual_range), error, abs(error), breakout,
-                 timestamp, asset, timeframe),
-            )
+        row = conn.execute(
+            f'SELECT har_predicted_range FROM har_predictions '
+            f'WHERE "timestamp" = ? AND asset = ? AND timeframe = ?',
+            (timestamp, asset, timeframe),
+        ).fetchone()
+        if row is None:
+            logger.warning("update_actual: no prediction row for %s %s @ %s",
+                           asset, timeframe, timestamp)
+            return False
+        predicted = float(row["har_predicted_range"])
+        error = float(actual_range) - predicted
+        breakout = 1 if (predicted > 0.0
+                         and float(actual_range) > BREAKOUT_THRESHOLD * predicted) else 0
+        cur = conn.execute(
+            f"""UPDATE har_predictions
+                SET actual_range = ?, prediction_error = ?,
+                    abs_prediction_error = ?, breakout_flag = ?
+                WHERE "timestamp" = ? AND asset = ? AND timeframe = ?
+                  AND actual_range IS NULL""",
+            (float(actual_range), error, abs(error), breakout,
+             timestamp, asset, timeframe),
+        )
+        if hasattr(conn, 'commit') and not getattr(conn, 'is_pg', False):
+            # commit manually for sqlite
+            try: conn.conn.commit()
+            except: pass
     if cur.rowcount == 0:
         logger.warning("update_actual: row for %s %s @ %s already has an "
                        "actual; keeping the first value", asset, timeframe, timestamp)
