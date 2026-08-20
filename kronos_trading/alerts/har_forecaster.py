@@ -74,10 +74,14 @@ class HarForecast:
     (``high - low``); it may be negative when the fit is badly extrapolating -
     this is the honest, validated-model output and is logged as-is.
     ``coefficients`` is ``(B0, B1, B2, B3)`` for persistence in the logger.
+    ``regime`` is optional metadata (``'low'``/``'medium'``/``'high'``) - it is
+    NOT computed by ``predict_next_range``; callers attach it afterwards from
+    ``classify_regime`` (e.g. ``dataclasses.replace(forecast, regime=...)``).
     """
     predicted_range: float
     coefficients: Tuple[float, float, float, float]
     n_obs: int
+    regime: Optional[str] = None
 
 
 def _normalize_symbol(asset: str) -> str:
