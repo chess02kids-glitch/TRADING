@@ -372,4 +372,3 @@ def get_calibration_summary(
         "breakout_rate": breakout_count / n_obs,
         "regime_counts": regime_counts,
     }
-    }
