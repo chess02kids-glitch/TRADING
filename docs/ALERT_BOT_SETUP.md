@@ -247,7 +247,44 @@ was off (that's the "pending predictions" step).
 
 ## 9. Run it 24/7 with Windows Task Scheduler
 
-For the 30-day experiment the bot should run continuously. Two options:
+For the 30-day experiment the bot should run continuously. The easiest path
+uses the ready-made task files (already in your repo):
+
+### Option 0 — ready-made tasks (easiest)
+
+Your repo contains `config/taskscheduler/` with two task definitions plus a
+PowerShell installer that fills in your real paths automatically.
+
+**Recommended — run the installer** (from the repo root, any PowerShell):
+
+```powershell
+# Always-on: starts at your Windows logon, runs forever (no window):
+powershell -ExecutionPolicy Bypass -File config\taskscheduler\install_tasks.ps1
+
+# OR hourly one-shot (runs one cycle at HH:30 every hour, then exits):
+powershell -ExecutionPolicy Bypass -File config\taskscheduler\install_tasks.ps1 -Mode Hourly
+```
+
+It checks that `.venv` exists, warns if `.env` is missing, and registers the
+task. Verify: Task Scheduler → Task Scheduler Library → **HAR Alert Bot**
+(right-click → **Run**), then check `logs\har_bot.log` and your Telegram for
+the 🟢 startup message.
+
+**Or import the XML by hand:**
+
+1. Open `config\taskscheduler\har_alert_bot_always_on.xml` (or
+   `har_alert_bot_hourly_once.xml`) in Notepad.
+2. Replace **both** occurrences of `C:\path\to\TRADING` with your real repo
+   path. Save As → Encoding: **Unicode** (UTF-16).
+3. Task Scheduler → right side **Import Task…** → pick the file → OK.
+
+> ⚠️ **Never install both** the always-on and the hourly task — the bot
+> would run twice per hour and send duplicate forecasts. Pick one.
+> Full details: `config\taskscheduler\README.md`.
+
+The two manual recipes below (Option A = always-on, Option B = hourly) are
+the same configurations built click-by-click, in case you prefer doing it by
+hand or need to tweak something.
 
 ### Option A — always-on (simplest, recommended)
 
