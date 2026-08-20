@@ -33,19 +33,20 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import re
-import sqlite3
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import psycopg
+
 from kronos_trading.alerts.har_forecaster import HarForecast
 
 logger = logging.getLogger(__name__)
 
-# Default DB lives next to the project's other SQLite artifacts
-# (data/db/*.db is gitignored - see .gitignore line 40).
+# Default DB fallback is not strictly needed for cloud, but we keep the variable for compatibility
 DEFAULT_DB_PATH = str(Path(__file__).resolve().parents[2] / "data" / "db" / "har_predictions.db")
 
 DEFAULT_HISTORY_LIMIT = 720       # 30 days of 1h bars
@@ -58,7 +59,7 @@ _ISO8601_UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS har_predictions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     "timestamp" TEXT NOT NULL,
     asset TEXT NOT NULL,
     timeframe TEXT NOT NULL,
@@ -87,18 +88,11 @@ _COLUMNS = (
 _SELECT_ALL = f"SELECT {', '.join(_COLUMNS)} FROM har_predictions"
 
 
-def _connect(db_path: str) -> sqlite3.Connection:
-    """Open one connection with the project's row factory and WAL settings.
-
-    ``check_same_thread=False`` allows the scheduler to share/queue calls from
-    different threads; each call still uses its own connection, so there is no
-    shared-cursor state to race on.
-    """
-    conn = sqlite3.connect(str(db_path), check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL;").fetchall()
-    conn.execute("PRAGMA synchronous=NORMAL;").fetchall()
-    return conn
+def _connect(db_path: str):
+    url = os.environ.get("SUPABASE_DB_URL")
+    if not url:
+        raise RuntimeError("SUPABASE_DB_URL missing")
+    return psycopg.connect(url, row_factory=dict_row, autocommit=True)
 
 
 def _normalize(asset: str, timeframe: str) -> tuple:
@@ -176,10 +170,11 @@ def log_prediction(
     with closing(_connect(db_path)) as conn:
         with conn:
             cur = conn.execute(
-                f"""INSERT OR IGNORE INTO har_predictions
+                f"""INSERT INTO har_predictions
                     ("timestamp", asset, timeframe, har_predicted_range,
                      coef_b0, coef_b1, coef_b2, coef_b3, n_obs, regime, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT("timestamp", asset, timeframe) DO NOTHING""",
                 (timestamp, asset, timeframe,
                  float(forecast.predicted_range), b0, b1, b2, b3,
                  int(forecast.n_obs), regime, _now_iso()),
@@ -188,8 +183,8 @@ def log_prediction(
                 logger.info("Duplicate prediction for %s %s @ %s - returning "
                             "existing row id", asset, timeframe, timestamp)
         row = conn.execute(
-            f'SELECT id FROM har_predictions WHERE "timestamp" = ? '
-            f"AND asset = ? AND timeframe = ?",
+            f'SELECT id FROM har_predictions WHERE "timestamp" = %s '
+            f"AND asset = %s AND timeframe = %s",
             (timestamp, asset, timeframe),
         ).fetchone()
     if row is None:  # pragma: no cover - impossible unless the DB is corrupt
@@ -236,7 +231,7 @@ def update_actual(
         with conn:
             row = conn.execute(
                 f'SELECT har_predicted_range FROM har_predictions '
-                f'WHERE "timestamp" = ? AND asset = ? AND timeframe = ?',
+                f'WHERE "timestamp" = %s AND asset = %s AND timeframe = %s',
                 (timestamp, asset, timeframe),
             ).fetchone()
             if row is None:
@@ -249,9 +244,9 @@ def update_actual(
                              and float(actual_range) > BREAKOUT_THRESHOLD * predicted) else 0
             cur = conn.execute(
                 f"""UPDATE har_predictions
-                    SET actual_range = ?, prediction_error = ?,
-                        abs_prediction_error = ?, breakout_flag = ?
-                    WHERE "timestamp" = ? AND asset = ? AND timeframe = ?
+                    SET actual_range = %s, prediction_error = %s,
+                        abs_prediction_error = %s, breakout_flag = %s
+                    WHERE "timestamp" = %s AND asset = %s AND timeframe = %s
                       AND actual_range IS NULL""",
                 (float(actual_range), error, abs(error), breakout,
                  timestamp, asset, timeframe),
