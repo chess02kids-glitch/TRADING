@@ -272,6 +272,11 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 
 def _main(argv: Optional[List[str]] = None) -> int:
+    if sys.stdout.encoding.lower() != 'utf-8':
+        try:
+            sys.stdout.reconfigure(encoding='utf-8')
+        except AttributeError:
+            pass
     args = parse_args(argv)
     setup_logging(args.log_level)
     load_dotenv()
