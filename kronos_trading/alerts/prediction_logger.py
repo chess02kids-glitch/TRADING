@@ -33,14 +33,15 @@ from __future__ import annotations
 
 import logging
 import math
-import os
 import re
+import os
+import sqlite3
+import psycopg
+from psycopg.rows import dict_row
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
-import psycopg
 
 from kronos_trading.alerts.har_forecaster import HarForecast
 
@@ -59,7 +60,7 @@ _ISO8601_UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS har_predictions (
-    id SERIAL PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     "timestamp" TEXT NOT NULL,
     asset TEXT NOT NULL,
     timeframe TEXT NOT NULL,
@@ -88,11 +89,34 @@ _COLUMNS = (
 _SELECT_ALL = f"SELECT {', '.join(_COLUMNS)} FROM har_predictions"
 
 
+class DBWrapper:
+    def __init__(self, db_path):
+        self.url = os.environ.get("SUPABASE_DB_URL")
+        self.is_pg = bool(self.url)
+        if self.is_pg:
+            self.conn = psycopg.connect(self.url, autocommit=True, row_factory=dict_row)
+        else:
+            self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
+            self.conn.row_factory = sqlite3.Row
+            self.conn.execute("PRAGMA journal_mode=WAL;").fetchall()
+            self.conn.execute("PRAGMA synchronous=NORMAL;").fetchall()
+            
+    def execute(self, sql, params=()):
+        if self.is_pg:
+            sql = sql.replace("?", "%s")
+            if "INSERT OR IGNORE" in sql:
+                sql = sql.replace("INSERT OR IGNORE INTO", "INSERT INTO")
+                sql += "\nON CONFLICT(\"timestamp\", asset, timeframe) DO NOTHING"
+        return self.conn.execute(sql, params)
+    def close(self):
+        self.conn.close()
+    def __enter__(self):
+        self.ctx = self.conn.__enter__()
+        return self
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return self.conn.__exit__(exc_type, exc_val, exc_tb)
 def _connect(db_path: str):
-    url = os.environ.get("SUPABASE_DB_URL")
-    if not url:
-        raise RuntimeError("SUPABASE_DB_URL missing")
-    return psycopg.connect(url, row_factory=dict_row, autocommit=True)
+    return DBWrapper(db_path)
 
 
 def _normalize(asset: str, timeframe: str) -> tuple:
@@ -106,17 +130,12 @@ def _now_iso() -> str:
 
 
 def initialize_db(db_path: str = DEFAULT_DB_PATH) -> None:
-    """Create the SQLite database and ``har_predictions`` table if missing.
-
-    Idempotent: safe to call any number of times. Also creates the parent
-    directory. The unique constraint on (timestamp, asset, timeframe) makes
-    duplicate predictions impossible.
-    """
+    if os.environ.get("SUPABASE_DB_URL"):
+        return
     path = Path(str(db_path))
     path.parent.mkdir(parents=True, exist_ok=True)
     with closing(_connect(path)) as conn:
-        with conn:
-            conn.execute(_SCHEMA)
+        conn.execute(_SCHEMA)
 
 
 def log_prediction(
@@ -170,11 +189,10 @@ def log_prediction(
     with closing(_connect(db_path)) as conn:
         with conn:
             cur = conn.execute(
-                f"""INSERT INTO har_predictions
+                f"""INSERT OR IGNORE INTO har_predictions
                     ("timestamp", asset, timeframe, har_predicted_range,
                      coef_b0, coef_b1, coef_b2, coef_b3, n_obs, regime, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT("timestamp", asset, timeframe) DO NOTHING""",
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (timestamp, asset, timeframe,
                  float(forecast.predicted_range), b0, b1, b2, b3,
                  int(forecast.n_obs), regime, _now_iso()),
@@ -183,8 +201,8 @@ def log_prediction(
                 logger.info("Duplicate prediction for %s %s @ %s - returning "
                             "existing row id", asset, timeframe, timestamp)
         row = conn.execute(
-            f'SELECT id FROM har_predictions WHERE "timestamp" = %s '
-            f"AND asset = %s AND timeframe = %s",
+            f'SELECT id FROM har_predictions WHERE "timestamp" = ? '
+            f"AND asset = ? AND timeframe = ?",
             (timestamp, asset, timeframe),
         ).fetchone()
     if row is None:  # pragma: no cover - impossible unless the DB is corrupt
@@ -231,7 +249,7 @@ def update_actual(
         with conn:
             row = conn.execute(
                 f'SELECT har_predicted_range FROM har_predictions '
-                f'WHERE "timestamp" = %s AND asset = %s AND timeframe = %s',
+                f'WHERE "timestamp" = ? AND asset = ? AND timeframe = ?',
                 (timestamp, asset, timeframe),
             ).fetchone()
             if row is None:
@@ -244,9 +262,9 @@ def update_actual(
                              and float(actual_range) > BREAKOUT_THRESHOLD * predicted) else 0
             cur = conn.execute(
                 f"""UPDATE har_predictions
-                    SET actual_range = %s, prediction_error = %s,
-                        abs_prediction_error = %s, breakout_flag = %s
-                    WHERE "timestamp" = %s AND asset = %s AND timeframe = %s
+                    SET actual_range = ?, prediction_error = ?,
+                        abs_prediction_error = ?, breakout_flag = ?
+                    WHERE "timestamp" = ? AND asset = ? AND timeframe = ?
                       AND actual_range IS NULL""",
                 (float(actual_range), error, abs(error), breakout,
                  timestamp, asset, timeframe),
