@@ -38,6 +38,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional
 
 import requests
@@ -95,6 +96,19 @@ class SendResult:
     message_id: Optional[int]
     error: Optional[str]
     attempts: int
+
+
+@dataclass
+class AssetDailyStats:
+    """Daily prediction and calibration statistics for one market."""
+
+    asset: str
+    timeframe: str
+    total_predictions: int
+    completed: int
+    pending: int
+    calibration: LiveCalibration | None
+    days_running: int
 
 
 def _send_url(config: TelegramConfig) -> str:
@@ -221,6 +235,115 @@ def send_calibration_report(
     """Send the periodic HAR calibration report."""
     text = format_calibration_message(asset, timeframe, cal)
     return send_message(config, text)
+
+
+def send_daily_report(
+    config: TelegramConfig,
+    stats: list[AssetDailyStats],
+    calibration_day: int,
+    total_days: int = 30,
+) -> SendResult:
+    """Send the daily prediction and calibration summary to Telegram.
+
+    The report is informational and is intended to run once per day at
+    08:00 UTC. As with the other sender helpers, failures are represented by
+    ``SendResult`` rather than propagated to the scheduler or CLI.
+    """
+    try:
+        if not stats:
+            return send_message(
+                config,
+                "📈 HAR Bot Daily Report\n"
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                "No prediction data yet.\n"
+                "Bot may have just started.",
+                parse_mode=None,
+            )
+
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+        days_remaining = max(0, total_days - calibration_day)
+
+        all_beating = all(
+            s.calibration.har_beats_persistence
+            for s in stats
+            if s.calibration is not None
+        )
+        any_degrading = any(
+            s.calibration is not None and s.calibration.is_degrading
+            for s in stats
+        )
+
+        if any_degrading:
+            overall_status = "⚠️ DEGRADING — check logs"
+        elif all_beating:
+            overall_status = "✅ ON TRACK"
+        else:
+            overall_status = "❌ HAR not beating persistence"
+
+        asset_sections = []
+        for stat in stats:
+            cal = stat.calibration
+            if cal is None:
+                section = (
+                    f"{stat.asset} {stat.timeframe}\n"
+                    f"  Predictions logged: {stat.total_predictions}\n"
+                    f"  Completed: {stat.completed}\n"
+                    f"  Pending: {stat.pending}\n"
+                    "  Calibration: insufficient data\n"
+                    "  (need 24+ completed predictions)"
+                )
+            else:
+                beats = "✅ YES" if cal.har_beats_persistence else "❌ NO"
+                degrading = "⚠️ YES" if cal.is_degrading else "✅ NO"
+                bias_direction = (
+                    "overestimate" if cal.mean_bias > 0 else "underestimate"
+                )
+                bias_str = f"{cal.mean_bias:+.1f} (slight {bias_direction})"
+                mae_7d = (
+                    f"{cal.recent_mae_7d:.2f}"
+                    if cal.recent_mae_7d is not None
+                    else "N/A (< 7 days)"
+                )
+                worst = (
+                    f"{cal.worst_ratio:.2f}×"
+                    if cal.worst_ratio is not None
+                    else "N/A"
+                )
+                section = (
+                    f"{stat.asset} {stat.timeframe}\n"
+                    f"  Predictions logged: {stat.total_predictions}\n"
+                    f"  Completed: {stat.completed}\n"
+                    f"  Pending: {stat.pending}\n"
+                    f"  HAR MAE: {cal.har_mae:.2f}\n"
+                    f"  Persistence MAE: {cal.persistence_mae:.2f}\n"
+                    f"  HAR beats naive: {beats}\n"
+                    f"  Mean bias: {bias_str}\n"
+                    f"  Breakouts: {cal.breakout_count} "
+                    f"({cal.breakout_rate:.1%})\n"
+                    f"  Worst breakout: {worst}\n"
+                    f"  7-day MAE: {mae_7d}\n"
+                    f"  Degrading: {degrading}"
+                )
+            asset_sections.append(section)
+
+        assets_text = "\n\n".join(asset_sections)
+        message = (
+            "📈 HAR Bot — Daily Report\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"Date: {today} UTC\n"
+            f"Day {calibration_day} of {total_days}-day calibration period\n\n"
+            f"{assets_text}\n\n"
+            f"📊 Overall Status: {overall_status}\n"
+            f"Days remaining: {days_remaining}\n\n"
+            "⚠️ Research tool only. Not financial advice.\n"
+            "No trades are placed."
+        )
+        # This report is plain text. Disabling Telegram's HTML parser also
+        # keeps the literal "(< 7 days)" fallback safe.
+        return send_message(config, message, parse_mode=None)
+    except Exception as exc:  # noqa: BLE001 - public sender helpers never raise
+        logger.warning("Daily report send failed: %s", exc)
+        return SendResult(False, None, str(exc), 0)
 
 
 def send_startup_message(config: TelegramConfig) -> SendResult:
