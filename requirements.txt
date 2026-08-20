@@ -3,4 +3,3 @@ pandas
 ccxt
 requests
 python-dotenv
-psycopg[binary]
