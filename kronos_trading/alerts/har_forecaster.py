@@ -93,10 +93,10 @@ def _normalize_symbol(asset: str) -> str:
 
 
 def _default_exchange():
-    """CCXT Binance public client - no API keys (same pattern as the Phase 2 fetcher)."""
+    """CCXT KuCoin public client - no API keys (Binance blocks GitHub Action US IPs)."""
     import ccxt  # lazy import so the module stays importable without ccxt
 
-    return ccxt.binance({
+    return ccxt.kucoin({
         "enableRateLimit": True,
         "options": {"defaultType": "spot"},
     })
