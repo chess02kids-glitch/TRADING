@@ -1,0 +1,74 @@
+{
+  "experiment_id": "phase4_baseline",
+  "frozen_at": "2026-08-14",
+  "description": "Frozen Phase 4 baseline experiment (original OHLCV close target, horizon=1). These results were produced on the verified dataset on the target machine and must not be overwritten. Phase 5 research targets are compared against this record.",
+  "configuration": {
+    "model": "NeoQuasar/Kronos-small",
+    "model_revision": "901c26c1332695a2a8f243eb2f37243a37bea320",
+    "tokenizer": "NeoQuasar/Kronos-Tokenizer-base",
+    "tokenizer_revision": "0e0117387f39004a9016484a186a908917e22426",
+    "context_length": 512,
+    "horizon": 1,
+    "deterministic": true,
+    "seed": 0,
+    "top_k": 1,
+    "top_p": 1.0,
+    "sample_count": 1,
+    "direction_threshold": 0.0005,
+    "window_size": 1000,
+    "windows": ["older", "middle", "recent"],
+    "series": [
+      "BTC/USDT 1h",
+      "ETH/USDT 1h",
+      "BTC/USDT 4h",
+      "ETH/USDT 4h",
+      "BTC/USDT 1d",
+      "ETH/USDT 1d"
+    ]
+  },
+  "results": {
+    "summary_findings": [
+      "6 series, 18 chronological window evaluations",
+      "Kronos lost to persistence on ALL 18 windows for close MAE, close RMSE, MAPE, return MAE and return RMSE",
+      "Kronos beat persistence on directional accuracy in all 18 windows, but persistence predicts zero return and therefore does not constitute a meaningful directional benchmark",
+      "Against previous-direction, Kronos won 16/18 MAE windows, 16/18 RMSE windows, 16/18 MAPE windows, 16/18 return MAE windows, 16/18 return RMSE windows; directional accuracy was mixed",
+      "The 1h/4h patterns are stable across older/middle/recent windows",
+      "Daily windows are smaller (~73 samples/window) and should be treated as lower-confidence evidence",
+      "Conclusion of the frozen experiment: the present Kronos-small configuration has not demonstrated incremental price-prediction value over persistence"
+    ],
+    "btc_1h": {
+      "predictions": 1000,
+      "kronos": {
+        "mae_close": 164.0275,
+        "rmse_close": 226.534,
+        "mape_close": 0.002564,
+        "directional_accuracy": 0.378616,
+        "return_correlation": 0.026805
+      },
+      "persistence": {
+        "mae_close": 135.2848
+      },
+      "previous_direction": {
+        "mae_close": 200.1951,
+        "directional_accuracy": 0.382390
+      }
+    },
+    "eth_1h": {
+      "predictions": 1000,
+      "kronos": {
+        "mae_close": 6.5228,
+        "rmse_close": 9.18107,
+        "mape_close": 0.003511,
+        "directional_accuracy": 0.410256,
+        "return_correlation": -0.006795
+      },
+      "persistence": {
+        "mae_close": 5.2629
+      },
+      "previous_direction": {
+        "mae_close": 7.8907,
+        "directional_accuracy": 0.389277
+      }
+    }
+  }
+}

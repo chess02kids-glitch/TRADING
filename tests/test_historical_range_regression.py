@@ -371,7 +371,16 @@ def test_days_beyond_exchange_availability_caps_at_genesis(pipeline):
 
     assert first_ms == BINANCE_SPOT_GENESIS_MS, \
         f"first candle must equal Binance spot genesis 2017-08-17, got {first_ms}"
-    assert 3278 <= span <= 3282, f"availability-capped span, got {span:.1f}d"
+    # The available span grows by one day per real-world day, so it is asserted
+    # against the genesis-to-today distance rather than a hardcoded constant.
+    # This preserves the semantic guarantee - requests beyond listing are capped
+    # at exchange availability and never fabricate pre-genesis candles - while
+    # remaining correct as time moves forward.
+    genesis_day = BINANCE_SPOT_GENESIS_MS // DAY_MS
+    today_day = int(datetime.now(timezone.utc).timestamp() * 1000) // DAY_MS
+    expected_span = today_day - genesis_day
+    assert abs(span - expected_span) <= 1, \
+        f"availability-capped span should track genesis->today (~{expected_span}d), got {span:.1f}d"
     assert count == int(span) + 1
     # Sanity: every stored candle is within exchange availability
     assert first_ms >= BINANCE_SPOT_GENESIS_MS

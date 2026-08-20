@@ -40,6 +40,8 @@ data/processed/*
 data/db/*.db
 data/db/*.sqlite
 data/db/*.json
+data/eval/*
+data/derivatives/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/db/.gitkeep
