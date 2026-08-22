@@ -46,6 +46,7 @@ from dashboard.data_loader import (
     fetch_calibration_summary,
     fetch_predictions,
     fetch_breakouts,
+    fetch_reports,
 )
 from dashboard.charts import (
     chart_predicted_vs_actual,
@@ -490,9 +491,35 @@ def load_all_data():
     breakouts = fetch_breakouts(
         limit=BREAKOUT_TABLE_ROWS)
 
-    return (btc_summary, eth_summary,
-            btc_df, eth_df, breakouts)
+    daily_reports = fetch_reports("daily_reports", limit=5)
+    weekly_reports = fetch_reports("weekly_reports", limit=5)
 
+    return (btc_summary, eth_summary,
+            btc_df, eth_df, breakouts, daily_reports, weekly_reports)
+
+
+
+import json
+def render_reports_section(daily_df, weekly_df):
+    st.markdown("### 📑 Automated Reports", unsafe_allow_html=False)
+    
+    daily_tab, weekly_tab = st.tabs(["Daily Reports", "Weekly Reports"])
+    
+    with daily_tab:
+        if daily_df.empty:
+            st.info("No daily reports found.")
+        else:
+            for idx, row in daily_df.iterrows():
+                with st.expander(f"Daily Report: {row['report_date']}"):
+                    st.json(json.loads(row['report_data']) if isinstance(row['report_data'], str) else row['report_data'])
+                    
+    with weekly_tab:
+        if weekly_df.empty:
+            st.info("No weekly reports found.")
+        else:
+            for idx, row in weekly_df.iterrows():
+                with st.expander(f"Weekly Report: {row['report_date']}"):
+                    st.json(json.loads(row['report_data']) if isinstance(row['report_data'], str) else row['report_data'])
 
 def main():
     """Main dashboard entry point."""
@@ -517,7 +544,7 @@ def main():
     with st.spinner("Loading calibration data..."):
         (btc_summary, eth_summary,
          btc_df, eth_df,
-         breakouts_df) = load_all_data()
+         breakouts_df, daily_reports, weekly_reports) = load_all_data()
 
     # Calibration progress section
     render_calibration_progress(
@@ -553,6 +580,11 @@ def main():
 
     # Breakouts section (all assets)
     render_breakouts_section(breakouts_df)
+
+    st.divider()
+
+    # Reports section
+    render_reports_section(daily_reports, weekly_reports)
 
     st.divider()
 

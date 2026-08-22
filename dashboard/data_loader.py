@@ -17,10 +17,24 @@ logger = logging.getLogger(__name__)
 def get_db_url() -> Optional[str]:
     """
     Get Supabase connection URL from
-    environment variable.
+    environment variable or Streamlit secrets.
     Returns None if not set.
     """
-    return os.environ.get("SUPABASE_DB_URL")
+    # 1. Try environment variable
+    url = os.environ.get("SUPABASE_DB_URL")
+    if url:
+        return url
+        
+    # 2. Try Streamlit secrets (for Streamlit Cloud deployment)
+    try:
+        import streamlit as st
+        url = st.secrets.get("SUPABASE_DB_URL")
+        if url:
+            return url
+    except Exception:
+        pass
+        
+    return None
 
 
 def fetch_predictions(
@@ -324,5 +338,42 @@ def fetch_breakouts(
         return df
 
     except Exception as e:
-        logger.error(f"Failed to fetch breakouts: {e}")
         return pd.DataFrame()
+
+
+def fetch_reports(table_name: str, limit: int = 10) -> pd.DataFrame:
+    """
+    Fetch reports from daily_reports or weekly_reports.
+    """
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+
+        url = get_db_url()
+        if not url:
+            return pd.DataFrame()
+
+        query = f"""
+            SELECT *
+            FROM {table_name}
+            ORDER BY created_at DESC
+            LIMIT %s
+        """
+
+        with psycopg.connect(url, row_factory=dict_row) as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, (limit,))
+                rows = cur.fetchall()
+
+        if not rows:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(rows)
+        if "created_at" in df.columns:
+            df["created_at"] = pd.to_datetime(df["created_at"], utc=True, errors="coerce")
+        return df
+
+    except Exception as e:
+        logger.error(f"Failed to fetch {table_name}: {e}")
+        return pd.DataFrame()
+
