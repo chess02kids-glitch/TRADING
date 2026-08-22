@@ -75,6 +75,13 @@ CREATE TABLE IF NOT EXISTS har_predictions (
     prediction_error REAL,
     abs_prediction_error REAL,
     breakout_flag INTEGER DEFAULT 0,
+    fear_greed_value INTEGER,
+    btc_dominance REAL,
+    total_mcap_trillion REAL,
+    mcap_change_24h REAL,
+    dxy REAL,
+    vix REAL,
+    btc_options_iv REAL,
     created_at TEXT NOT NULL,
     UNIQUE ("timestamp", asset, timeframe)
 )
@@ -84,7 +91,9 @@ _COLUMNS = (
     "id", '"timestamp"', "asset", "timeframe", "har_predicted_range",
     "coef_b0", "coef_b1", "coef_b2", "coef_b3", "n_obs", "regime",
     "actual_range", "prediction_error", "abs_prediction_error",
-    "breakout_flag", "created_at",
+    "breakout_flag", "fear_greed_value", "btc_dominance",
+    "total_mcap_trillion", "mcap_change_24h", "dxy", "vix",
+    "btc_options_iv", "created_at",
 )
 _SELECT_ALL = f"SELECT {', '.join(_COLUMNS)} FROM har_predictions"
 
@@ -122,6 +131,9 @@ class DBWrapper:
         return self.conn.execute(sql, params)
     def close(self):
         self.conn.close()
+    def commit(self):
+        if hasattr(self.conn, 'commit'):
+            self.conn.commit()
     def __enter__(self):
         self.ctx = self.conn.__enter__()
         return self
@@ -141,13 +153,30 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _upgrade_schema(db_path: str) -> None:
+    columns_to_add = [
+        ("fear_greed_value", "INTEGER"),
+        ("btc_dominance", "REAL"),
+        ("total_mcap_trillion", "REAL"),
+        ("mcap_change_24h", "REAL"),
+        ("dxy", "REAL"),
+        ("vix", "REAL"),
+        ("btc_options_iv", "REAL"),
+    ]
+    with closing(_connect(db_path)) as conn:
+        for col, col_type in columns_to_add:
+            try:
+                conn.execute(f"ALTER TABLE har_predictions ADD COLUMN {col} {col_type}")
+            except Exception:
+                pass
+
 def initialize_db(db_path: str = DEFAULT_DB_PATH) -> None:
-    if os.environ.get("SUPABASE_DB_URL"):
-        return
-    path = Path(str(db_path))
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with closing(_connect(path)) as conn:
-        conn.execute(_SCHEMA)
+    if not os.environ.get("SUPABASE_DB_URL"):
+        path = Path(str(db_path))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with closing(_connect(path)) as conn:
+            conn.execute(_SCHEMA)
+    _upgrade_schema(db_path)
 
 
 def log_prediction(
@@ -157,6 +186,7 @@ def log_prediction(
     timeframe: str,
     forecast: HarForecast,
     regime: Optional[str] = None,
+    market_context: Optional[Any] = None,
 ) -> int:
     """Log one HAR prediction for a bar that has not closed yet.
 
@@ -198,19 +228,34 @@ def log_prediction(
         coefs = (coefs + (0.0,) * 4)[:4]
     b0, b1, b2, b3 = coefs
 
+    mc = market_context
+    mc_values = (None, None, None, None, None, None, None)
+    if mc is not None:
+        mc_values = (
+            mc.fear_greed_value,
+            mc.btc_dominance,
+            mc.total_mcap_trillion,
+            mc.mcap_change_24h,
+            mc.macro.dxy if mc.macro else None,
+            mc.macro.vix if mc.macro else None,
+            mc.macro.btc_options_iv if mc.macro else None,
+        )
+
     with closing(_connect(db_path)) as conn:
         cur = conn.execute(
             f"""INSERT OR IGNORE INTO har_predictions
                 ("timestamp", asset, timeframe, har_predicted_range,
-                 coef_b0, coef_b1, coef_b2, coef_b3, n_obs, regime, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 coef_b0, coef_b1, coef_b2, coef_b3, n_obs, regime, 
+                 fear_greed_value, btc_dominance, total_mcap_trillion, 
+                 mcap_change_24h, dxy, vix, btc_options_iv, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (timestamp, asset, timeframe,
              float(forecast.predicted_range), b0, b1, b2, b3,
-             int(forecast.n_obs), regime, _now_iso()),
+             int(forecast.n_obs), regime, *mc_values, _now_iso()),
         )
-        if hasattr(conn, 'commit') and not getattr(conn, 'is_pg', False):
+        if not getattr(conn, 'is_pg', False):
             # commit manually for sqlite
-            try: conn.conn.commit()
+            try: conn.commit()
             except: pass
         if cur.rowcount == 0:
             logger.info("Duplicate prediction for %s %s @ %s - returning "
@@ -283,10 +328,7 @@ def update_actual(
             (float(actual_range), error, abs(error), breakout,
              timestamp, asset, timeframe),
         )
-        if hasattr(conn, 'commit') and not getattr(conn, 'is_pg', False):
-            # commit manually for sqlite
-            try: conn.conn.commit()
-            except: pass
+        conn.commit()
     if cur.rowcount == 0:
         logger.warning("update_actual: row for %s %s @ %s already has an "
                        "actual; keeping the first value", asset, timeframe, timestamp)
