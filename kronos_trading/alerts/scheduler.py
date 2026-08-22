@@ -314,6 +314,26 @@ def run_single_cycle(
         logger.exception("Cycle %s: DB init failed", cycle_ts)
         return result
 
+    # Fetch market context early so it can be logged with predictions
+    # Optional enrichment — never blocks the cycle
+    context: MarketContext | None = None
+    try:
+        context = get_market_context(timeout=8.0)
+        if context.is_complete:
+            logger.info(
+                f"Market context fetched: F&G={context.fear_greed_value}, "
+                f"BTC dom={context.btc_dominance}%"
+            )
+        else:
+            logger.warning(
+                f"Market context incomplete: {context.fetch_errors}"
+            )
+    except Exception as e:
+        logger.warning(
+            f"Market context fetch failed unexpectedly: {e}"
+        )
+        context = None
+
     for asset in scheduler_config.assets:
         try:
             candles = fetch_candles(asset, tf, n=scheduler_config.n_candles,
@@ -340,32 +360,13 @@ def run_single_cycle(
             regime = classify_regime(forecast.predicted_range, historical)
             forecast = dataclasses.replace(forecast, regime=regime)
             pred_ts = _bar_open_time_utc(now, tf).strftime(_ISO_FMT)
-            log_prediction(db, pred_ts, asset, tf, forecast)
+            log_prediction(db, pred_ts, asset, tf, forecast, market_context=context)
             result.forecasts[asset] = forecast
         except Exception as exc:  # noqa: BLE001 - RULE 1
             result.errors.append(f"{asset}: prediction failed: {exc}")
             logger.warning("Cycle %s: prediction failed for %s: %s",
                            cycle_ts, asset, exc)
 
-    # Fetch market context
-    # Optional enrichment — never blocks the cycle
-    context: MarketContext | None = None
-    try:
-        context = get_market_context(timeout=8.0)
-        if context.is_complete:
-            logger.info(
-                f"Market context fetched: F&G={context.fear_greed_value}, "
-                f"BTC dom={context.btc_dominance}%"
-            )
-        else:
-            logger.warning(
-                f"Market context incomplete: {context.fetch_errors}"
-            )
-    except Exception as e:
-        logger.warning(
-            f"Market context fetch failed unexpectedly: {e}"
-        )
-        context = None
 
     # Combined forecast message (BTC + ETH by send_forecast's contract).
     try:
