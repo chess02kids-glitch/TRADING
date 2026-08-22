@@ -79,6 +79,16 @@ equity_curve.png
 backtest_results/
 live_positions.json
 
+# === Freqtrade HAR research (freqtrade_har/) ===
+# Mirror of freqtrade_har/.gitignore_freqtrade
+# (git only honors ignore files named exactly ".gitignore")
+freqtrade_har/user_data/data/
+freqtrade_har/user_data/backtest_results/
+freqtrade_har/user_data/logs/
+freqtrade_har/user_data/tradesv3.dryrun.sqlite
+*.dryrun.sqlite
+!freqtrade_har/user_data/.gitkeep
+
 # === Node (for dashboard) ===
 node_modules/
 .streamlit/

@@ -1,0 +1,9 @@
+# Freqtrade data and results
+freqtrade_har/user_data/data/
+freqtrade_har/user_data/backtest_results/
+freqtrade_har/user_data/logs/
+freqtrade_har/user_data/tradesv3.dryrun.sqlite
+*.dryrun.sqlite
+
+# Not the .gitkeep
+!freqtrade_har/user_data/.gitkeep
