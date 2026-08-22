@@ -228,6 +228,20 @@ class TestSendForecast:
                                    "2024-01-15T14:00:00Z")
         assert isinstance(result, SendResult)
 
+    def test_send_forecast_shows_bias_lines_when_corrected(self):
+        from kronos_trading.alerts.har_forecaster import apply_bias_correction
+        btc = apply_bias_correction(make_forecast(predicted=847.2, regime="high"),
+                                    -55.7)
+        eth = make_forecast(predicted=25.0)  # no bias -> no bias lines
+        with patch(f"{MODULE}.send_message",
+                   return_value=SendResult(True, 1, None, 1)) as m:
+            send_forecast(make_config(), btc, eth, "2024-01-15T14:00:00Z")
+        text = m.call_args.args[1]
+        assert "Bias correction: -$55.70" in text
+        assert "Corrected range: $791.50" in text
+        # Only the corrected (BTC) asset shows the bias lines.
+        assert text.count("Bias correction") == 1
+
 
 # ---------------------------------------------------------------------------
 # send_breakout

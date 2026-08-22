@@ -56,6 +56,9 @@ from dashboard.charts import (
     chart_prediction_errors,
     chart_calibration_gauge,
     chart_har_coefficients,
+    plot_coefficient_drift,
+    plot_improvement_confidence,
+    daily_mae_frame,
 )
 from dashboard.utils import (
     format_mae,
@@ -277,12 +280,14 @@ def render_charts_section(
         f"### 📈 {asset} Charts",
         unsafe_allow_html=False)
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "Predicted vs Actual",
         "Daily MAE",
         "Regime Distribution",
         "Error Distribution",
         "HAR Coefficients",
+        "Coefficient Stability",
+        "Rolling Improvement + CI",
     ])
 
     with tab1:
@@ -321,6 +326,22 @@ def render_charts_section(
             fig,
             use_container_width=True,
             key=f"coefs_{asset}")
+
+    with tab6:
+        st.caption("All four HAR coefficients over time. Flat lines ⇒ stable model.")
+        fig = plot_coefficient_drift(df, asset)
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
+            key=f"coef_drift_{asset}")
+
+    with tab7:
+        st.caption("Rolling 7-day improvement % with a 95% confidence band.")
+        fig = plot_improvement_confidence(daily_mae_frame(df), asset)
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
+            key=f"improvement_ci_{asset}")
 
 
 def render_breakouts_section(

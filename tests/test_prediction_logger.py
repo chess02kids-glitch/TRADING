@@ -36,7 +36,8 @@ EXPECTED_COLUMNS = {
     "breakout_flag", "fear_greed_value", "btc_dominance",
     "total_mcap_trillion", "mcap_change_24h", "dxy", "vix",
     "btc_options_iv", "breakout_direction", "breakout_candle_open",
-    "breakout_candle_close", "created_at",
+    "breakout_candle_close", "bias_correction", "corrected_predicted_range",
+    "created_at",
 }
 
 
@@ -73,7 +74,7 @@ class TestInitializeDb:
         initialize_db(db)
         cols = {r["name"] for r in query(db, "PRAGMA table_info(har_predictions)")}
         assert cols == EXPECTED_COLUMNS
-        assert len(cols) == 26  # exactly the spec'd schema, nothing extra
+        assert len(cols) == 28  # exactly the spec'd schema, nothing extra
 
     def test_initialize_db_is_idempotent(self, tmp_path):
         db = str(tmp_path / "alerts.db")

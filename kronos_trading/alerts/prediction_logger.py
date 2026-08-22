@@ -85,6 +85,8 @@ CREATE TABLE IF NOT EXISTS har_predictions (
     breakout_direction INTEGER,
     breakout_candle_open REAL,
     breakout_candle_close REAL,
+    bias_correction REAL,
+    corrected_predicted_range REAL,
     created_at TEXT NOT NULL,
     UNIQUE ("timestamp", asset, timeframe)
 )
@@ -113,7 +115,8 @@ _COLUMNS = (
     "breakout_flag", "fear_greed_value", "btc_dominance",
     "total_mcap_trillion", "mcap_change_24h", "dxy", "vix",
     "btc_options_iv", "breakout_direction", "breakout_candle_open",
-    "breakout_candle_close", "created_at",
+    "breakout_candle_close", "bias_correction", "corrected_predicted_range",
+    "created_at",
 )
 _SELECT_ALL = f"SELECT {', '.join(_COLUMNS)} FROM har_predictions"
 
@@ -185,6 +188,8 @@ def _upgrade_schema(db_path: str) -> None:
         ("breakout_direction", "INTEGER"),
         ("breakout_candle_open", "REAL"),
         ("breakout_candle_close", "REAL"),
+        ("bias_correction", "REAL"),
+        ("corrected_predicted_range", "REAL"),
     ]
     with closing(_connect(db_path)) as conn:
         for col, col_type in columns_to_add:
@@ -276,20 +281,25 @@ def log_prediction(
     bd = int(breakout_direction) if breakout_direction is not None else None
     co = float(candle_open) if candle_open is not None else None
     cc = float(candle_close) if candle_close is not None else None
+    # Phase 9A bias correction (additive; forecast carries the values, default 0).
+    bias_corr = float(getattr(forecast, "bias_correction", 0.0) or 0.0)
+    corrected = float(getattr(forecast, "corrected_predicted_range", 0.0) or 0.0)
 
     with closing(_connect(db_path)) as conn:
         cur = conn.execute(
             f"""INSERT OR IGNORE INTO har_predictions
                 ("timestamp", asset, timeframe, har_predicted_range,
-                 coef_b0, coef_b1, coef_b2, coef_b3, n_obs, regime, 
-                 fear_greed_value, btc_dominance, total_mcap_trillion, 
+                 coef_b0, coef_b1, coef_b2, coef_b3, n_obs, regime,
+                 fear_greed_value, btc_dominance, total_mcap_trillion,
                  mcap_change_24h, dxy, vix, btc_options_iv,
                  breakout_direction, breakout_candle_open,
-                 breakout_candle_close, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 breakout_candle_close, bias_correction,
+                 corrected_predicted_range, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (timestamp, asset, timeframe,
              float(forecast.predicted_range), b0, b1, b2, b3,
-             int(forecast.n_obs), regime, *mc_values, bd, co, cc, _now_iso()),
+             int(forecast.n_obs), regime, *mc_values, bd, co, cc,
+             bias_corr, corrected, _now_iso()),
         )
         if not getattr(conn, 'is_pg', False):
             # commit manually for sqlite

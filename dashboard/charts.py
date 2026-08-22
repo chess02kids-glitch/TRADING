@@ -5,6 +5,7 @@ No Streamlit imports here — just data → chart.
 """
 
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -419,4 +420,124 @@ def chart_har_coefficients(
         **base_layout(
             f"{asset} — HAR Model Coefficients "
             f"Over Time"))
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# Phase 9A: coefficient drift + rolling improvement confidence
+# ---------------------------------------------------------------------------
+
+def daily_mae_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """Daily ``[timestamp, har_mae, persistence_mae]`` from a predictions frame.
+
+    Shared helper for the improvement-confidence chart. Persistence MAE uses the
+    lag-1 HAR prediction as the naive baseline (same definition as
+    ``chart_mae_over_time``). Only completed rows (``actual_range`` not null)
+    are used.
+    """
+    if df is None or df.empty or "actual_range" not in df.columns:
+        return pd.DataFrame(columns=["timestamp", "har_mae", "persistence_mae"])
+    completed = df[df["actual_range"].notna()].sort_values("timestamp").copy()
+    if completed.empty:
+        return pd.DataFrame(columns=["timestamp", "har_mae", "persistence_mae"])
+    completed["persistence_pred"] = completed["har_predicted_range"].shift(1)
+    completed["persistence_error"] = (
+        completed["actual_range"] - completed["persistence_pred"]).abs()
+    completed["date"] = completed["timestamp"].dt.floor("D")
+    daily = completed.groupby("date").agg(
+        har_mae=("abs_prediction_error", "mean"),
+        persistence_mae=("persistence_error", "mean"),
+    ).reset_index().rename(columns={"date": "timestamp"})
+    return daily
+
+
+def plot_coefficient_drift(
+    df: pd.DataFrame,
+    asset: str = "BTC/USDT",
+) -> go.Figure:
+    """Line chart of all four HAR coefficients (B0–B3) over time.
+
+    Heavy drift ⇒ the model is becoming unstable; four relatively flat lines ⇒
+    healthy. Input columns: ``[timestamp, coef_b0, coef_b1, coef_b2, coef_b3]``.
+    """
+    required = ["timestamp", "coef_b0", "coef_b1", "coef_b2", "coef_b3"]
+    if df is None or df.empty or not all(c in df.columns for c in required):
+        return _empty_figure("Insufficient data for coefficient drift",
+                              f"{asset} — HAR Coefficient Stability")
+
+    df_sorted = df.sort_values("timestamp").copy()
+    fig = go.Figure()
+    coef_info = [
+        ("coef_b0", "B0 (intercept)", "#4f8ef7"),
+        ("coef_b1", "B1 (previous bar)", "#00ff88"),
+        ("coef_b2", "B2 (5-bar mean)", "#ffaa00"),
+        ("coef_b3", "B3 (22-bar mean)", "#ff4444"),
+    ]
+    for col, name, color in coef_info:
+        fig.add_trace(go.Scatter(
+            x=df_sorted["timestamp"],
+            y=df_sorted[col],
+            name=name,
+            line=dict(color=color, width=2),
+            mode="lines",
+        ))
+    fig.update_layout(**base_layout(f"{asset} — HAR Coefficient Stability"))
+    return fig
+
+
+def plot_improvement_confidence(
+    df: pd.DataFrame,
+    asset: str = "BTC/USDT",
+    window: int = 7,
+) -> go.Figure:
+    """Rolling 7-day improvement % with a 95% confidence band and a zero line.
+
+    Input columns: ``[timestamp, har_mae, persistence_mae]``. Shows whether the
+    HAR edge (e.g. +7%) is holding or converging toward 0. The improvement is
+    ``(persistence_mae - har_mae) / persistence_mae * 100``; the band is the
+    rolling mean ± 1.96·SE (SE = rolling σ / √n).
+    """
+    required = ["timestamp", "har_mae", "persistence_mae"]
+    if df is None or df.empty or not all(c in df.columns for c in required):
+        return _empty_figure("Insufficient data for improvement confidence",
+                              f"{asset} — Rolling Improvement + CI")
+
+    d = df.sort_values("timestamp").copy()
+    denom = d["persistence_mae"].replace(0, np.nan)
+    d["improvement_pct"] = (d["persistence_mae"] - d["har_mae"]) / denom * 100.0
+    roll = d["improvement_pct"].rolling(window, min_periods=2)
+    d["roll_mean"] = roll.mean()
+    roll_std = roll.std()
+    roll_n = d["improvement_pct"].rolling(window, min_periods=2).count()
+    se = roll_std / np.sqrt(roll_n)
+    d["ci_hi"] = d["roll_mean"] + 1.96 * se
+    d["ci_lo"] = d["roll_mean"] - 1.96 * se
+
+    fig = go.Figure()
+    # 95% confidence band (filled)
+    fig.add_trace(go.Scatter(
+        x=list(d["timestamp"]) + list(d["timestamp"][::-1]),
+        y=list(d["ci_hi"]) + list(d["ci_lo"][::-1]),
+        fill="toself",
+        fillcolor="rgba(79, 142, 247, 0.15)",
+        line=dict(color="rgba(0,0,0,0)"),
+        hoverinfo="skip",
+        showlegend=True,
+        name="95% confidence band",
+    ))
+    fig.add_trace(go.Scatter(
+        x=d["timestamp"], y=d["roll_mean"],
+        name=f"Rolling {window}-day improvement %",
+        line=dict(color=HAR_COLOR, width=2),
+        mode="lines+markers",
+    ))
+    # Zero reference line
+    fig.add_trace(go.Scatter(
+        x=[d["timestamp"].iloc[0], d["timestamp"].iloc[-1]],
+        y=[0, 0],
+        name="0% (no edge)",
+        line=dict(color=PERSISTENCE_COLOR, width=2, dash="dash"),
+        mode="lines",
+    ))
+    fig.update_layout(**base_layout(f"{asset} — Rolling Improvement + CI"))
     return fig

@@ -59,7 +59,9 @@ from kronos_trading.alerts.breakout_detector import (
 )
 from kronos_trading.alerts.har_forecaster import (
     HarForecast,
+    apply_bias_correction,
     classify_regime,
+    compute_bias_correction,
     fetch_candles,
     predict_next_range,
 )
@@ -430,6 +432,16 @@ def run_single_cycle(
                           for c in candles[-720:]]
             regime = classify_regime(forecast.predicted_range, historical)
             forecast = dataclasses.replace(forecast, regime=regime)
+            # Phase 9A additive bias correction (past-only; never modifies HAR
+            # OLS). Best-effort: a failure here leaves the forecast uncorrected.
+            try:
+                bias = compute_bias_correction(
+                    get_prediction_history(db, asset, tf), window_days=7)
+                if bias != 0.0:
+                    forecast = apply_bias_correction(forecast, bias)
+            except Exception as exc:  # noqa: BLE001 - bias is optional
+                logger.warning("Cycle %s: bias correction failed for %s: %s",
+                               cycle_ts, asset, exc)
             pred_ts = _bar_open_time_utc(now, tf).strftime(_ISO_FMT)
             log_prediction(db, pred_ts, asset, tf, forecast, market_context=context)
             result.forecasts[asset] = forecast
