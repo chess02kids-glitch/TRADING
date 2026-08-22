@@ -4,3 +4,4 @@ ccxt
 requests
 python-dotenv
 psycopg[binary]
+yfinance>=0.2.40
