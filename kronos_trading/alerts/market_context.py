@@ -167,7 +167,8 @@ def fetch_dxy_vix(
                 timeout=timeout,
             )
             if dxy_data is not None and len(dxy_data) >= 2:
-                closes = dxy_data["Close"].dropna()
+                close_col = dxy_data["Close"]
+                closes = close_col.iloc[:, 0].dropna() if hasattr(close_col, "columns") else close_col.dropna()
                 if len(closes) >= 2:
                     dxy = round(float(closes.iloc[-1]), 2)
                     dxy_change = round(
@@ -188,7 +189,8 @@ def fetch_dxy_vix(
                 timeout=timeout,
             )
             if vix_data is not None and len(vix_data) >= 1:
-                closes = vix_data["Close"].dropna()
+                close_col = vix_data["Close"]
+                closes = close_col.iloc[:, 0].dropna() if hasattr(close_col, "columns") else close_col.dropna()
                 if len(closes) >= 1:
                     vix = round(float(closes.iloc[-1]), 2)
         except Exception as e:
