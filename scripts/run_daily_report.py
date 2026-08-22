@@ -154,6 +154,23 @@ def main() -> int:
         calibration_day,
         CALIBRATION_TOTAL_DAYS,
     )
+    
+    from kronos_trading.alerts.prediction_logger import log_daily_report
+    import dataclasses
+    
+    report_data = {
+        "stats": [dataclasses.asdict(s) for s in all_stats],
+        "calibration_day": calibration_day,
+        "calibration_total_days": CALIBRATION_TOTAL_DAYS,
+    }
+    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    
+    try:
+        log_daily_report(db_path, date_str, report_data)
+        logger.info("Saved daily report to database.")
+    except Exception as exc:
+        logger.error("Failed to save daily report to database: %s", exc)
+
     if result.success:
         logger.info("Daily report sent: message_id=%s", result.message_id)
         return 0

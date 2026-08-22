@@ -620,6 +620,24 @@ def main() -> int:
 
     logger.info("Sending weekly summary to Telegram")
     result = send_weekly_report(telegram_config, message)
+    
+    from kronos_trading.alerts.prediction_logger import log_weekly_report
+    
+    report_data = {
+        "current": current,
+        "previous": previous,
+        "weeks": weeks,
+        "progress": progress,
+        "calibration_day": calibration_day,
+    }
+    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    
+    try:
+        log_weekly_report(db_url, date_str, report_data)
+        logger.info("Saved weekly report to database.")
+    except Exception as exc:
+        logger.error("Failed to save weekly report to database: %s", exc)
+
     if result.success:
         logger.info("Weekly summary sent: message_id=%s", result.message_id)
         return 0

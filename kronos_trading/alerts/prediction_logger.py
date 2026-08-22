@@ -87,6 +87,22 @@ CREATE TABLE IF NOT EXISTS har_predictions (
 )
 """
 
+_SCHEMA_REPORTS = """
+CREATE TABLE IF NOT EXISTS daily_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    report_date TEXT NOT NULL,
+    report_data TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS weekly_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    report_date TEXT NOT NULL,
+    report_data TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+"""
+
 _COLUMNS = (
     "id", '"timestamp"', "asset", "timeframe", "har_predicted_range",
     "coef_b0", "coef_b1", "coef_b2", "coef_b3", "n_obs", "regime",
@@ -176,6 +192,8 @@ def initialize_db(db_path: str = DEFAULT_DB_PATH) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with closing(_connect(path)) as conn:
             conn.execute(_SCHEMA)
+            conn.execute(_SCHEMA_REPORTS.split(';')[0] + ';')
+            conn.execute(_SCHEMA_REPORTS.split(';')[1] + ';')
     _upgrade_schema(db_path)
 
 
@@ -445,3 +463,29 @@ def get_calibration_summary(
         "breakout_rate": breakout_count / n_obs,
         "regime_counts": regime_counts,
     }
+
+
+import json
+
+def log_daily_report(db_path: str, report_date: str, report_data: dict) -> None:
+    initialize_db(db_path)
+    with closing(_connect(db_path)) as conn:
+        conn.execute(
+            "INSERT INTO daily_reports (report_date, report_data, created_at) VALUES (?, ?, ?)",
+            (report_date, json.dumps(report_data), _now_iso())
+        )
+        if not getattr(conn, 'is_pg', False):
+            try: conn.commit()
+            except: pass
+
+def log_weekly_report(db_path: str, report_date: str, report_data: dict) -> None:
+    initialize_db(db_path)
+    with closing(_connect(db_path)) as conn:
+        conn.execute(
+            "INSERT INTO weekly_reports (report_date, report_data, created_at) VALUES (?, ?, ?)",
+            (report_date, json.dumps(report_data), _now_iso())
+        )
+        if not getattr(conn, 'is_pg', False):
+            try: conn.commit()
+            except: pass
+
