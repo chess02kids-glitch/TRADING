@@ -92,3 +92,8 @@ freqtrade_har/user_data/tradesv3.dryrun.sqlite
 # === Node (for dashboard) ===
 node_modules/
 .streamlit/
+backtest_results/
+live_positions.json
+# === Generated QuantStats reports (uploaded as Actions artifacts) ===
+reports/*.html
+reports/*.csv

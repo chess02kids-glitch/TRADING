@@ -1,0 +1,55 @@
+name: HAR QuantStats Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      note:
+        description: 'Report note (e.g. Day 15 interim)'
+        required: false
+        default: 'Manual report'
+
+jobs:
+  generate-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install QuantStats (report only, not in requirements.txt)
+        run: pip install quantstats
+
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Generate HAR QuantStats report
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: python scripts/run_quantstats_report.py
+
+      - name: Upload HTML reports as artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: har-quantstats-reports
+          path: reports/
+          retention-days: 90
