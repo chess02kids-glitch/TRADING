@@ -1,105 +1,95 @@
-"""Unit tests for execution.position_tracker (local SQLite paper book)."""
+"""Tests for execution.position_tracker (local SQLite paper book)."""
 from __future__ import annotations
 
 import pytest
 
-from execution.order_manager import OrderParams
-from execution.position_tracker import PositionTracker
-
-
-def _params(symbol="BTC/USDT", side="buy", size=0.1, direction=1,
-            har_range=200.0, regime="high"):
-    return OrderParams(
-        symbol=symbol, side=side, size=size, target_vol=0.01,
-        har_vol_estimate=0.01, account_size=10000.0, direction=direction,
-        har_predicted_range=har_range, regime=regime,
-    )
+from execution.position_tracker import (
+    close_position,
+    compute_paper_pnl,
+    get_closed_positions,
+    get_open_positions,
+    initialize_db,
+    open_position,
+)
 
 
 @pytest.fixture
-def tracker(tmp_path):
-    return PositionTracker(db_path=str(tmp_path / "positions.db"))
+def db(tmp_path):
+    initialize_db(str(tmp_path / "pp.db"))
+    return str(tmp_path / "pp.db")
 
 
 class TestOpenClose:
 
-    def test_open_position_returns_id(self, tracker):
-        pid = tracker.open_position(_params(), fill_price=20000.0)
-        assert isinstance(pid, int)
-        assert pid >= 1
+    def test_open_returns_id(self, db):
+        pid = open_position("BTC/USDT", 1, 20000.0, 0.05, 1000.0, 200.0, "high")
+        assert isinstance(pid, int) and pid >= 1
 
-    def test_open_then_close_long(self, tracker):
-        pid = tracker.open_position(_params(size=0.5, direction=1), fill_price=20000.0)
-        ok = tracker.close_position(pid, exit_price=21000.0)
-        assert ok is True
-        hist = tracker.get_position_history()
-        assert hist[0]["status"] == "closed"
-        # long pnl = (21000-20000)*0.5 = 500
-        assert hist[0]["pnl"] == pytest.approx(500.0)
+    def test_close_long_pnl(self, db):
+        pid = open_position("BTC/USDT", 1, 100.0, 1.0, 100.0, 10.0, "high")
+        assert close_position(pid, 110.0) is True
+        row = get_closed_positions()[0]
+        assert row["pnl_usd"] == pytest.approx(10.0)
+        assert row["pnl_pct"] == pytest.approx(10.0)
 
-    def test_close_short_pnl_sign(self, tracker):
-        pid = tracker.open_position(_params(size=0.5, direction=-1, side="sell"),
-                                    fill_price=20000.0)
-        tracker.close_position(pid, exit_price=21000.0)
-        # short pnl = (20000-21000)*0.5 = -500
-        hist = tracker.get_position_history()
-        assert hist[0]["pnl"] == pytest.approx(-500.0)
+    def test_close_short_pnl(self, db):
+        pid = open_position("BTC/USDT", -1, 100.0, 1.0, 100.0, 10.0, "high")
+        close_position(pid, 110.0)  # short loses when price rises
+        row = get_closed_positions()[0]
+        assert row["pnl_usd"] == pytest.approx(-10.0)
 
-    def test_close_unknown_id(self, tracker):
-        assert tracker.close_position(999, exit_price=1.0) is False
+    def test_close_unknown_returns_false(self, db):
+        assert close_position(999, 100.0) is False
 
-    def test_double_close_returns_false(self, tracker):
-        pid = tracker.open_position(_params(), fill_price=100.0)
-        assert tracker.close_position(pid, 110.0) is True
-        assert tracker.close_position(pid, 120.0) is False
+    def test_double_close_returns_false(self, db):
+        pid = open_position("BTC/USDT", 1, 100.0, 1.0, 100.0, 10.0, "high")
+        assert close_position(pid, 110.0) is True
+        assert close_position(pid, 120.0) is False
 
 
 class TestQueries:
 
-    def test_open_positions_and_history(self, tracker):
-        p1 = tracker.open_position(_params(symbol="BTC/USDT"), fill_price=20000.0)
-        p2 = tracker.open_position(_params(symbol="ETH/USDT", direction=1), fill_price=1000.0)
-        tracker.close_position(p1, 20500.0)
-        opens = tracker.get_open_positions()
-        assert len(opens) == 1
-        assert opens[0]["asset"] == "ETH/USDT"
-        hist = tracker.get_position_history()
-        assert len(hist) == 2
-
-    def test_open_positions_empty(self, tracker):
-        assert tracker.get_open_positions() == []
-        assert tracker.get_position_history() == []
+    def test_open_and_closed_lists(self, db):
+        p1 = open_position("BTC/USDT", 1, 100.0, 1.0, 100.0, 10.0, "high")
+        p2 = open_position("ETH/USDT", 1, 50.0, 2.0, 100.0, 5.0, "low")
+        close_position(p1, 110.0)
+        opens = get_open_positions()
+        assert len(opens) == 1 and opens[0]["asset"] == "ETH/USDT"
+        closed = get_closed_positions()
+        assert len(closed) == 1 and closed[0]["asset"] == "BTC/USDT"
 
 
 class TestPnl:
 
-    def test_compute_paper_pnl(self, tracker):
-        p1 = tracker.open_position(_params(size=1.0, direction=1), fill_price=100.0)
-        p2 = tracker.open_position(_params(size=1.0, direction=1), fill_price=100.0)
-        tracker.close_position(p1, 110.0)   # +10
-        tracker.close_position(p2, 95.0)    # -5
-        pnl = tracker.compute_paper_pnl()
-        assert pnl["realized_pnl"] == pytest.approx(5.0)
-        assert pnl["n_closed"] == 2
-        assert pnl["n_open"] == 0
+    def test_compute_paper_pnl(self, db):
+        p1 = open_position("BTC/USDT", 1, 100.0, 1.0, 100.0, 10.0, "high")
+        p2 = open_position("BTC/USDT", 1, 100.0, 1.0, 100.0, 10.0, "high")
+        close_position(p1, 110.0)   # +10
+        close_position(p2, 95.0)    # -5
+        pnl = compute_paper_pnl()
+        assert pnl["total_pnl_usd"] == pytest.approx(5.0)
+        assert pnl["closed_trades"] == 2
+        assert pnl["open_trades"] == 0
+        assert pnl["total_trades"] == 2
         assert pnl["win_rate"] == pytest.approx(0.5)
+        assert pnl["avg_pnl_pct"] == pytest.approx(2.5)  # (10 + -5)/2
 
-    def test_pnl_all_open(self, tracker):
-        tracker.open_position(_params(), fill_price=100.0)
-        pnl = tracker.compute_paper_pnl()
-        assert pnl["realized_pnl"] == 0.0
-        assert pnl["n_open"] == 1
-        assert pnl["n_closed"] == 0
+    def test_pnl_all_open(self, db):
+        open_position("BTC/USDT", 1, 100.0, 1.0, 100.0, 10.0, "high")
+        pnl = compute_paper_pnl()
+        assert pnl["total_pnl_usd"] == 0.0
+        assert pnl["open_trades"] == 1
+        assert pnl["closed_trades"] == 0
 
 
-class TestSchemaPersistence:
+class TestSchema:
 
-    def test_columns_match_contract(self, tracker):
-        tracker.open_position(_params(), fill_price=100.0)
-        row = tracker.get_position_history()[0]
+    def test_columns_match_contract(self, db):
+        open_position("BTC/USDT", 1, 100.0, 1.0, 100.0, 10.0, "high")
+        row = get_open_positions()[0]
         expected = {
-            "id", "timestamp", "asset", "direction", "entry_price", "size",
-            "har_predicted_range", "regime", "status", "exit_price", "pnl",
-            "exit_timestamp",
+            "id", "timestamp", "asset", "direction", "entry_price", "size_base",
+            "size_usd", "har_predicted_range", "regime", "status", "exit_price",
+            "pnl_usd", "pnl_pct", "exit_timestamp", "created_at",
         }
         assert expected.issubset(set(row.keys()))

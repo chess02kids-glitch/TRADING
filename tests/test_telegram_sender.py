@@ -20,6 +20,7 @@ import requests
 from kronos_trading.alerts.breakout_detector import (
     LiveCalibration,
     check_breakout,
+    format_breakout_message,
 )
 from kronos_trading.alerts.har_forecaster import HarForecast
 from kronos_trading.alerts.market_context import MarketContext
@@ -396,3 +397,26 @@ def test_send_forecast_context_failure_safe():
     with patch(f"{MODULE}.send_message", return_value=SendResult(True, 1, None, 1)):
         result = send_forecast(make_config(), make_forecast(), make_forecast(), "15:00:00", context=None)
     assert result.success is True
+
+
+# ---------------------------------------------------------------------------
+# Phase 9A: direction line in the breakout message
+# ---------------------------------------------------------------------------
+
+class TestBreakoutDirectionMessage:
+    """The breakout message shows the candle direction when it is known."""
+
+    def test_direction_up_in_message(self):
+        result = check_breakout(250.0, 100.0, candle_open=100.0, candle_close=110.0)
+        msg = format_breakout_message("BTC/USDT", "1h", result, "2024-01-15T14:00:00Z")
+        assert "Direction: ⬆️ UP" in msg
+
+    def test_direction_down_in_message(self):
+        result = check_breakout(250.0, 100.0, candle_open=110.0, candle_close=100.0)
+        msg = format_breakout_message("BTC/USDT", "1h", result, "2024-01-15T14:00:00Z")
+        assert "Direction: ⬇️ DOWN" in msg
+
+    def test_no_direction_line_when_none(self):
+        result = check_breakout(250.0, 100.0)  # breakout but no candle prices
+        msg = format_breakout_message("BTC/USDT", "1h", result, "2024-01-15T14:00:00Z")
+        assert "Direction:" not in msg

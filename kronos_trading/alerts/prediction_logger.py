@@ -82,6 +82,9 @@ CREATE TABLE IF NOT EXISTS har_predictions (
     dxy REAL,
     vix REAL,
     btc_options_iv REAL,
+    breakout_direction INTEGER,
+    breakout_candle_open REAL,
+    breakout_candle_close REAL,
     created_at TEXT NOT NULL,
     UNIQUE ("timestamp", asset, timeframe)
 )
@@ -109,7 +112,8 @@ _COLUMNS = (
     "actual_range", "prediction_error", "abs_prediction_error",
     "breakout_flag", "fear_greed_value", "btc_dominance",
     "total_mcap_trillion", "mcap_change_24h", "dxy", "vix",
-    "btc_options_iv", "created_at",
+    "btc_options_iv", "breakout_direction", "breakout_candle_open",
+    "breakout_candle_close", "created_at",
 )
 _SELECT_ALL = f"SELECT {', '.join(_COLUMNS)} FROM har_predictions"
 
@@ -178,6 +182,9 @@ def _upgrade_schema(db_path: str) -> None:
         ("dxy", "REAL"),
         ("vix", "REAL"),
         ("btc_options_iv", "REAL"),
+        ("breakout_direction", "INTEGER"),
+        ("breakout_candle_open", "REAL"),
+        ("breakout_candle_close", "REAL"),
     ]
     with closing(_connect(db_path)) as conn:
         for col, col_type in columns_to_add:
@@ -205,6 +212,9 @@ def log_prediction(
     forecast: HarForecast,
     regime: Optional[str] = None,
     market_context: Optional[Any] = None,
+    breakout_direction: Optional[int] = None,
+    candle_open: Optional[float] = None,
+    candle_close: Optional[float] = None,
 ) -> int:
     """Log one HAR prediction for a bar that has not closed yet.
 
@@ -259,17 +269,27 @@ def log_prediction(
             mc.macro.btc_options_iv if mc.macro else None,
         )
 
+    # Phase 9A: breakout-bar candle direction. Only written when the caller
+    # supplies a breakout_direction (i.e. this row records a known breakout);
+    # otherwise all three are NULL. They are filled later by the backfill
+    # script / update path for rows that become breakouts after the bar closes.
+    bd = int(breakout_direction) if breakout_direction is not None else None
+    co = float(candle_open) if candle_open is not None else None
+    cc = float(candle_close) if candle_close is not None else None
+
     with closing(_connect(db_path)) as conn:
         cur = conn.execute(
             f"""INSERT OR IGNORE INTO har_predictions
                 ("timestamp", asset, timeframe, har_predicted_range,
                  coef_b0, coef_b1, coef_b2, coef_b3, n_obs, regime, 
                  fear_greed_value, btc_dominance, total_mcap_trillion, 
-                 mcap_change_24h, dxy, vix, btc_options_iv, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 mcap_change_24h, dxy, vix, btc_options_iv,
+                 breakout_direction, breakout_candle_open,
+                 breakout_candle_close, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (timestamp, asset, timeframe,
              float(forecast.predicted_range), b0, b1, b2, b3,
-             int(forecast.n_obs), regime, *mc_values, _now_iso()),
+             int(forecast.n_obs), regime, *mc_values, bd, co, cc, _now_iso()),
         )
         if not getattr(conn, 'is_pg', False):
             # commit manually for sqlite

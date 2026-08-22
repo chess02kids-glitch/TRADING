@@ -1,19 +1,17 @@
 """Paper-only CCXT exchange client (sandbox enforced at all times).
 
-A thin, *defensive* wrapper around CCXT. It is the single place the execution
-layer touches a real exchange library, and it is locked to **paper/sandbox**:
+The single place the execution layer touches a real exchange library, locked
+to **paper/sandbox**:
 
 * ``ExchangeConfig.sandbox`` defaults to ``True``.
 * Constructing an :class:`ExchangeClient` with ``sandbox=False`` raises
-  :class:`ValueError` immediately — there is no code path that reaches a live
-  endpoint.
-* The underlying CCXT instance is put into sandbox mode via
+  :class:`ValueError` immediately — no code path can reach a live endpoint.
+* The CCXT instance is created in ``__init__`` and put into sandbox mode via
   ``set_sandbox_mode(True)``.
 
 Every public method is fail-soft: it logs the error (with a UTC timestamp) and
 returns ``None`` (or ``False`` for :meth:`cancel_order`) instead of raising.
-Rate limiting is delegated to CCXT (``enableRateLimit = True``). Nothing here
-is connected to the live HAR bot — this is a logging-only paper layer.
+Rate limiting is delegated to CCXT (``enableRateLimit = True``).
 """
 from __future__ import annotations
 
@@ -27,11 +25,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ExchangeConfig:
-    """Credentials + mode for a paper-only exchange connection.
-
-    ``sandbox`` is ``True`` by default and **must** remain ``True`` — the
-    client refuses to construct otherwise.
-    """
+    """Credentials + mode for a paper-only exchange connection."""
     api_key: str
     api_secret: str
     api_password: str
@@ -48,14 +42,7 @@ def _now_iso() -> str:
 
 
 def _build_exchange(config: ExchangeConfig):
-    """Create the CCXT exchange object in sandbox mode.
-
-    Isolated as a module-level function so tests can monkeypatch it. Uses
-    ``enableRateLimit`` for built-in rate limiting and ``set_sandbox_mode`` to
-    force the testnet/sandbox endpoints. ``set_sandbox_mode`` failures are
-    logged but non-fatal (some exchange backends lack a sandbox URL); the
-    ``sandbox`` config flag is the hard guarantee.
-    """
+    """Create the CCXT exchange object in sandbox mode (monkeypatchable)."""
     import ccxt  # type: ignore
 
     exchange_class = getattr(ccxt, config.exchange_id)
@@ -78,34 +65,30 @@ class ExchangeClient:
     """Defensive, paper-only CCXT wrapper. Never raises on exchange errors."""
 
     def __init__(self, config: ExchangeConfig) -> None:
+        # Validate sandbox BEFORE touching anything else.
         if not config.sandbox:
             raise SandboxViolation(
                 "sandbox must be True — this is a paper-only execution layer. "
-                "Refusing to construct a client that could reach a live endpoint."
-            )
+                "Refusing to construct a client that could reach a live endpoint.")
         self.config = config
-        self._exchange: Optional[Any] = None
+        self._exchange: Optional[Any] = _build_exchange(config)
 
     # -- connection --------------------------------------------------------
 
     def connect(self) -> bool:
-        """Create the exchange object and load markets. Returns success bool."""
+        """Test the connection (load markets). Returns success bool."""
         try:
-            self._exchange = _build_exchange(self.config)
-            try:
-                self._exchange.load_markets()
-            except Exception as exc:
-                logger.warning("[%s] load_markets failed (non-fatal): %s",
-                               _now_iso(), exc)
-            return self._exchange is not None
+            if self._exchange is None:
+                return False
+            self._exchange.load_markets()
+            return True
         except Exception as exc:
             logger.error("[%s] connect failed: %s", _now_iso(), exc)
-            self._exchange = None
             return False
 
     def _ex(self):
         if self._exchange is None:
-            raise RuntimeError("not connected — call connect() first")
+            raise RuntimeError("exchange not initialized")
         return self._exchange
 
     # -- market data -------------------------------------------------------

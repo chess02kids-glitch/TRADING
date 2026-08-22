@@ -3,106 +3,62 @@
 A **pure statistical** test of one pre-registered hypothesis, with no
 machine-learning models and no live trading. It answers the one question the
 existing HAR system leaves open: *HAR predicts **how much** price will move —
-does the candle direction of a breakout bar also tell us **which way**?*
+does the breakout bar's candle direction also tell us **which way**?*
 
 ## The hypothesis (pre-registered — do not change)
 
 > When `actual_range > 2 × har_predicted_range` (a **breakout event**), the
 > breakout bar's candle direction (`close ≥ open` → **UP / +1**, else
-> **DOWN / −1`) persists into the next 1, 2, and 3 bars.
+> **DOWN / −1**) persists into the next 1, 2, and 3 bars.
 
-This module reads completed breakout rows from the existing
-`public.har_predictions` table (read-only — it never writes there) and the
-matching candle history from KuCoin, then tests whether the breakout
-direction predicts the sign of the forward return.
+This module is **DB-free**: it receives a `pd.DataFrame` of forward-return
+data produced by `kronos_trading.alerts.forward_return_logger.get_phase9a_data`
+(typically exported to CSV), and tests whether the breakout direction predicts
+the sign of the forward return.
 
 ## Modules
 
 | File | Responsibility |
 |------|----------------|
-| `direction_calculator.py` | Past-only breakout-bar direction (`+1`/`-1`) and 1/2/3-bar forward returns. No look-ahead by construction. |
-| `continuation_tester.py` | Hit rates (overall / per-asset / per-regime), temporal stability across older/middle/recent thirds, degradation flag, and the **G1–G6** gate checks. |
-| `dm_test.py` | One-sided Diebold-Mariano test of the directional signal vs a 50/50 random baseline, with HAC (Newey-West) standard errors. |
-| `phase9a_runner.py` | CLI orchestrator: fetch rows + candles → analyze → print report → optionally save `PHASE9A_RESULTS.md`. |
+| `direction_calculator.py` | `compute_hit_rate(df, horizon)` (overall / per-asset / per-direction) and `split_temporal_windows(df)` (older/middle/recent thirds). |
+| `continuation_tester.py` | `compute_temporal_stability(df, horizon)` and `run_all_gate_checks(df, horizon)` → G1–G6 + verdict. |
+| `dm_test.py` | One-sided Diebold-Mariano test vs a 50/50 coin flip (Newey-West HAC, 3 lags). |
+| `phase9a_runner.py` | CLI: load a CSV → analyze → print the results box → optionally save markdown. |
+
+## Input DataFrame columns
+
+`breakout_timestamp, asset, breakout_direction, horizon, target_timestamp,
+forward_return, forward_direction, breakout_close_price` — exactly what
+`forward_return_logger.get_phase9a_data()` returns.
 
 ## The gates (all must pass → `SIGNAL FOUND`; any fail → `CLOSED`)
 
-| Gate | Rule (operationalization) |
-|------|---------------------------|
-| **G1** | Overall hit rate **> 55%** *and* every asset **> 55%** at t+1. |
-| **G2** | Diebold-Mariano one-sided **p < 0.05** vs the random baseline. |
-| **G3** | Both **BTC/USDT** and **ETH/USDT** are present **and** each > 50% (consistency across both assets). |
-| **G4** | All three chronological thirds (older / middle / recent) **> 50%** (stable windows). |
-| **G5** | The recent third is **not > 10 percentage points** worse than the older third (no degradation). |
-| **G6** | At least **30** breakout events per asset (≥ 30 total as fallback). |
+| Gate | Rule |
+|------|------|
+| **G1** | Hit rate > 55% overall **and** on both BTC + ETH. |
+| **G2** | One-sided DM test **p < 0.05** vs a coin flip. |
+| **G3** | Hit rate > 50% on **both** BTC and ETH. |
+| **G4** | All three chronological thirds > 50% (temporal stability). |
+| **G5** | Not degrading (recent not > 0.10 below older). |
+| **G6** | At least **30** events per asset. |
 
 ## How to run
 
 ```bash
-# Read-only analysis against Supabase + KuCoin, default horizon t+1:
-python -m phase9a.phase9a_runner --db-url "$SUPABASE_DB_URL" --asset both --horizon 1
-
-# Dry run (no file written):
-python -m phase9a.phase9a_runner --db-url "$SUPABASE_DB_URL" --asset BTC/USDT --dry-run
+# Agent 2 exports the DB table to CSV, then:
+python -m phase9a.phase9a_runner --data-file phase9a_data.csv \
+    --asset both --horizon 1 --output phase9a/PHASE9A_RESULTS.md
 ```
 
 `--asset` is `BTC/USDT`, `ETH/USDT`, or `both` (default). `--horizon` is `1`,
-`2`, or `3` (default `1`, which is the canonical gate horizon). The DB URL can
-also be supplied via the `SUPABASE_DB_URL` environment variable. Results are
-saved to `phase9a/PHASE9A_RESULTS.md` unless `--dry-run` is passed.
+`2`, or `3` (default `1`, the primary gate horizon). If fewer than 30 events
+per asset are available it prints `"Not enough data yet"` and exits cleanly.
 
-The pure analysis core (`run_analysis`) is fully decoupled from I/O, so the
-whole experiment can be exercised with synthetic data — see
-`phase9a/tests/test_phase9a_runner.py`.
+## DM test convention
 
-## What the output means
-
-```
-===========================
-PHASE 9A RESULTS
-===========================
-Asset: both (BTC/USDT, ETH/USDT)
-Breakout events: 184
-Horizon: t+1
-
-Hit rate (overall): 61.2%      ← % of breakouts whose direction matched the next bar
-Hit rate (BTC): 60.1%
-Hit rate (ETH): 62.3%
-Hit rate (high regime): 63.0%  ← only meaningful when regimes are populated
-Hit rate (low regime): 58.0%
-
-DM statistic: -2.41            ← negative = signal beats the coin-flip baseline
-p-value: 8.0e-03               ← one-sided; < 0.05 ⇒ statistically significant
-
-Temporal stability:
-  Older: 59.0%
-  Middle: 61.0%
-  Recent: 63.0%
-
-Gate results:
-  G1 (hit rate > 55%): PASS
-  G2 (DM p < 0.05):    PASS
-  G3 (both assets):    PASS
-  G4 (stable windows): PASS
-  G5 (no degradation): PASS
-  G6 (n >= 30):        PASS
-
-VERDICT: SIGNAL FOUND
-```
-
-A **negative DM statistic** with a **small p-value** means the breakout
-direction is a *statistically significant* improvement over a coin flip. The
-verdict is `SIGNAL FOUND` only when **all six gates** pass; otherwise it is
-`CLOSED`, and the closed experiment should be documented, not retried.
-
-## Leakage discipline
-
-* Direction uses **only** the breakout bar's own `open`/`close`.
-* Forward returns use bars **strictly after** the breakout bar.
-* When the `t+N` bar does not exist, that horizon is **skipped** (no row, no
-  forward-fill).
-* Breakout timestamps (ISO8601 bar open time) are matched exactly against
-  candle open times; unmatched events are dropped.
+`d_t = loss_random − loss_signal` with `loss_random = 0.5` (expected coin-flip
+loss). A **positive DM statistic** with a **small one-sided p-value** means the
+signal is a statistically significant improvement over a coin flip.
 
 ## Tests
 
@@ -110,4 +66,4 @@ verdict is `SIGNAL FOUND` only when **all six gates** pass; otherwise it is
 python -m pytest phase9a/ -q
 ```
 
-All tests use synthetic data and a fake exchange — no DB, no network.
+All tests use synthetic DataFrames — no DB, no network.

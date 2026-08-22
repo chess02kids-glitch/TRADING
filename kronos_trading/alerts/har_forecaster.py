@@ -296,6 +296,24 @@ def predict_next_range(candles: List[Candle]) -> HarForecast:
     )
 
 
+def last_completed_open_close(candles: List[Candle]) -> Tuple[Optional[float], Optional[float]]:
+    """Open/close of the most recent *completed* candle (Phase 9A).
+
+    The candle series passed to the forecaster is ascending and contains only
+    closed bars (``fetch_candles`` drops the forming bar), so the last element
+    is the most recent completed bar. Its ``open`` / ``close`` are exactly what
+    Phase 9A needs to derive the breakout-bar direction, and the scheduler
+    forwards them into ``check_breakout(..., candle_open=, candle_close=)``.
+
+    Returns ``(None, None)`` for an empty series so callers can treat a missing
+    bar defensively without a special-case exception.
+    """
+    if not candles:
+        return None, None
+    last = candles[-1]
+    return float(last.open), float(last.close)
+
+
 def compute_regime_thresholds(
     historical_ranges: List[float],
     window_bars: int = REGIME_WINDOW_BARS,

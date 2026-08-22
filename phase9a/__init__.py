@@ -1,19 +1,17 @@
 """Phase 9A — breakout-direction continuation analysis (pure statistics).
 
-This package tests the pre-registered hypothesis that the candle direction of a
-HAR *breakout* bar (``actual_range > 2 x har_predicted_range``) persists into
-the next 1/2/3 bars. It is a *pure statistical* test: no machine-learning
-models, no live trading, no writes to the ``har_predictions`` table.
+Standalone analysis module. It does **not** connect to any database: it
+receives a ``pd.DataFrame`` of forward-return data (produced by
+``kronos_trading.alerts.forward_return_logger.get_phase9a_data`` and typically
+exported to CSV) and tests the pre-registered hypothesis that a HAR breakout
+bar's candle direction persists into the next 1/2/3 bars.
 
 Public surface:
 
-* :mod:`phase9a.direction_calculator` — past-only breakout direction + forward
-  returns from candle history.
-* :mod:`phase9a.continuation_tester` — hit rates, temporal stability,
-  degradation flag and the G1–G6 gate checks.
-* :mod:`phase9a.dm_test` — Diebold-Mariano test of the directional signal vs a
-  50/50 random baseline (one-sided, HAC / Newey-West standard errors).
-* :mod:`phase9a.phase9a_runner` — CLI orchestrator that ties it together.
+* :mod:`phase9a.direction_calculator` — hit rates + temporal-window splits.
+* :mod:`phase9a.continuation_tester` — temporal stability + G1–G6 gates.
+* :mod:`phase9a.dm_test` — one-sided Diebold-Mariano test vs a coin flip.
+* :mod:`phase9a.phase9a_runner` — CLI that loads a CSV and prints the report.
 """
 from __future__ import annotations
 

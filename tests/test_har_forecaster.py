@@ -23,6 +23,7 @@ from kronos_trading.alerts.har_forecaster import (
     HarForecast,
     candle_ranges,
     classify_regime,
+    last_completed_open_close,
     compute_har_features,
     compute_regime_thresholds,
     fetch_candles,
@@ -287,3 +288,25 @@ class TestRegime:
                                                     100.0 / 3.0))
         assert q_high == pytest.approx(np.percentile(ranges[-REGIME_WINDOW_BARS:],
                                                      200.0 / 3.0))
+
+
+# ---------------------------------------------------------------------------
+# Phase 9A: most-recent-completed-bar open/close extraction
+# ---------------------------------------------------------------------------
+
+class TestLastCompletedOpenClose:
+    """last_completed_open_close returns the most recent closed bar's OHLC."""
+
+    def test_extracts_last_bar_open_close(self):
+        candles = [
+            Candle(0, 100.0, 110.0, 95.0, 105.0, 1.0),
+            Candle(3_600_000, 105.0, 115.0, 100.0, 112.0, 1.0),
+        ]
+        assert last_completed_open_close(candles) == (105.0, 112.0)
+
+    def test_empty_returns_none_pair(self):
+        assert last_completed_open_close([]) == (None, None)
+
+    def test_single_bar_open_close(self):
+        candles = [Candle(0, 50.0, 55.0, 48.0, 52.0, 1.0)]
+        assert last_completed_open_close(candles) == (50.0, 52.0)

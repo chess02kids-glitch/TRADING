@@ -1,366 +1,187 @@
-"""Phase 9A orchestrator — ties direction, continuation and DM into one report.
+"""Phase 9A CLI — load a CSV of forward-return data and print the gate report.
 
-Reads completed breakout rows (``breakout_flag == 1``) from the
-``har_predictions`` table, pulls the matching candle history from KuCoin via
-CCXT, and runs the full pre-registered experiment:
+This runner is DB-free: it reads a CSV exported from
+``forward_return_logger.get_phase9a_data()`` and runs the full pre-registered
+experiment (hit rates → Diebold-Mariano → temporal stability → G1–G6 gates).
 
-1. compute breakout-bar direction (past-only)
-2. compute 1/2/3-bar forward returns
-3. compute hit rates (overall / per-asset / per-regime)
-4. run the one-sided Diebold-Mariano test vs a random baseline
-5. run the G1–G6 gate checks
-6. print the results table and (unless ``--dry-run``) write
-   ``phase9a/PHASE9A_RESULTS.md``
+Usage::
 
-This module **never writes** to ``har_predictions`` and **never places
-trades** — it is a read-only statistical analysis. The two real I/O providers
-(:func:`fetch_breakout_rows`, :func:`fetch_candle_history`) are isolated from
-the pure :func:`run_analysis` core so the whole experiment can be unit-tested
-with synthetic data and no network.
+    python -m phase9a.phase9a_runner --data-file phase9a_data.csv \\
+        --asset both --horizon 1 --output phase9a/PHASE9A_RESULTS.md
 
-CLI::
+CLI args:
+    --data-file   path to the CSV of Phase 9A forward-return data (required)
+    --asset       "BTC/USDT", "ETH/USDT", or "both" (default: both)
+    --horizon     1, 2, or 3 (default: 1, the primary gate horizon)
+    --output      optional path to save the report as markdown
 
-    python -m phase9a.phase9a_runner --db-url "$SUPABASE_DB_URL" \\
-        --asset both --horizon 1 --dry-run
+Flow: load → filter by asset → check G6 (≥30 events/asset) → analyze → print
+the results box → optionally save. If G6 fails it prints "Not enough data yet"
+and exits cleanly (the system is still collecting data).
 """
 from __future__ import annotations
 
 import argparse
-import logging
-import os
-import time
-from typing import Dict, Iterable, List, Optional
+import sys
+from typing import Dict, List, Optional
 
 import pandas as pd
 
 from phase9a.continuation_tester import (
-    compute_hit_rate,
+    BOTH_ASSETS,
+    PRIMARY_HORIZON,
     compute_temporal_stability,
-    merge_direction_returns,
-    run_gate_checks,
+    run_all_gate_checks,
 )
-from phase9a.direction_calculator import (
-    compute_breakout_direction,
-    compute_forward_returns,
-)
-from phase9a.dm_test import compute_dm_statistic
+from phase9a.direction_calculator import compute_hit_rate
 
-logger = logging.getLogger(__name__)
-
-DEFAULT_CANDLE_HISTORY = 3000          # ~125 days of 1h candles
-TIMEFRAME = "1h"
-RESULTS_PATH = os.path.join(os.path.dirname(__file__), "PHASE9A_RESULTS.md")
-_BAR_MS = 3_600_000
+MIN_EVENTS_PER_ASSET = 30
 
 
-# ---------------------------------------------------------------------------
-# Pure analysis core (fully testable, no I/O)
-# ---------------------------------------------------------------------------
-
-def run_analysis(
-    breakout_rows: pd.DataFrame,
-    candles_by_asset: Dict[str, pd.DataFrame],
-    horizon: int = 1,
-) -> Dict[str, object]:
-    """Run the full Phase 9A experiment on in-memory data.
-
-    Args:
-        breakout_rows: completed breakout rows (``breakout_flag == 1``) for one
-            or both assets. Must contain ``timestamp``, ``asset``,
-            ``har_predicted_range``.
-        candles_by_asset: ``{asset: candle DataFrame}`` covering every breakout
-            timestamp (and a few bars after for forward returns).
-        horizon: gate/analysis horizon (1, 2 or 3). Canonical gates use 1.
-
-    Returns a dict with ``direction_df``, ``returns_df``, ``hit_rate``,
-    ``dm``, ``temporal``, ``gates``, ``horizon``, ``assets``, ``n_events``.
-    """
-    horizon = int(horizon)
-    if breakout_rows is None or len(breakout_rows) == 0:
-        logger.warning("run_analysis: no breakout rows supplied")
-        empty = {
-            "hit_rate": {"hit_rate": 0.0, "n_events": 0, "n_correct": 0,
-                         "by_asset": {}, "by_asset_n": {}, "by_regime": {}},
-            "dm": {"dm_stat": 0.0, "p_value": 1.0, "n_obs": 0, "conclusion": "NO DATA"},
-            "temporal": {"older_hit_rate": 0.0, "middle_hit_rate": 0.0,
-                         "recent_hit_rate": 0.0, "is_stable": False},
-            "gates": run_gate_checks(
-                {"hit_rate": 0.0, "by_asset": {}, "by_asset_n": {}},
-                {"older_hit_rate": 0.0, "middle_hit_rate": 0.0, "recent_hit_rate": 0.0},
-                0, dm_dict=None),
-            "horizon": horizon, "assets": [], "n_events": 0,
-        }
-        return empty
-
-    assets = [str(a) for a in breakout_rows["asset"].unique()]
-    direction_parts: List[pd.DataFrame] = []
-    returns_parts: List[pd.DataFrame] = []
-    for asset in assets:
-        sub = breakout_rows[breakout_rows["asset"].astype(str) == asset]
-        cands = candles_by_asset.get(asset)
-        if cands is None or len(cands) == 0:
-            logger.warning("run_analysis: no candle history for %s — skipping", asset)
-            continue
-        direction_parts.append(compute_breakout_direction(cands, sub))
-        returns_parts.append(compute_forward_returns(cands, sub, horizons=(1, 2, 3)))
-
-    direction_df = pd.concat(direction_parts, ignore_index=True) if direction_parts else pd.DataFrame()
-    returns_df = pd.concat(returns_parts, ignore_index=True) if returns_parts else pd.DataFrame()
-
-    hit_rate = compute_hit_rate(direction_df, returns_df, horizon)
-    temporal = compute_temporal_stability(direction_df, returns_df, horizon)
-
-    # Paired actual/predicted directions at the analysed horizon for the DM test.
-    merged = merge_direction_returns(direction_df, returns_df, horizon)
-    if merged.empty:
-        dm = {"dm_stat": 0.0, "p_value": 1.0, "n_obs": 0, "conclusion": "NO DATA"}
-    else:
-        dm = compute_dm_statistic(
-            merged["forward_direction"].to_numpy(),
-            merged["breakout_direction"].to_numpy(),
-        )
-
-    gates = run_gate_checks(
-        hit_rate, temporal, hit_rate["n_events"], dm_dict=dm, horizon=horizon)
-
-    return {
-        "direction_df": direction_df,
-        "returns_df": returns_df,
-        "hit_rate": hit_rate,
-        "dm": dm,
-        "temporal": temporal,
-        "gates": gates,
-        "horizon": horizon,
-        "assets": assets,
-        "n_events": int(hit_rate["n_events"]),
-    }
+def load_data(path: str) -> pd.DataFrame:
+    """Load the Phase 9A CSV into a DataFrame."""
+    return pd.read_csv(path)
 
 
-def _fmt_pct(x: object) -> str:
-    """Format a hit-rate-like value as ``XX.X%`` or ``N/A``."""
+def filter_asset(df: pd.DataFrame, asset: str) -> pd.DataFrame:
+    """Keep rows for ``asset`` ('both' keeps BTC + ETH)."""
+    if asset == "both":
+        return df[df["asset"].isin(list(BOTH_ASSETS))].copy() if "asset" in df.columns else df.copy()
+    return df[df["asset"] == asset].copy() if "asset" in df.columns else df.copy()
+
+
+def _per_asset_counts(df: pd.DataFrame, horizon: int) -> Dict[str, int]:
+    sub = df.copy()
+    if "horizon" in sub.columns:
+        sub = sub[sub["horizon"] == horizon]
+    sub = sub.dropna(subset=["breakout_direction", "forward_direction"])
+    if sub.empty:
+        return {}
+    return {str(k): int(v) for k, v in sub.groupby("asset").size().items()}
+
+
+def _pct(x) -> str:
     try:
-        if x is None or (isinstance(x, float) and pd.isna(x)):
-            return "N/A"
-        return f"{float(x) * 100.0:.1f}%"
+        return f"{float(x) * 100:.1f}%"
     except (TypeError, ValueError):
         return "N/A"
 
 
-def _fmt_pvalue(p: object) -> str:
-    """Format a p-value, always in scientific-ish notation."""
-    try:
-        p = float(p)
-    except (TypeError, ValueError):
-        return "N/A"
-    if p == 0.0:
-        return "0.000e+00"
-    return f"{p:.3e}"
+def format_report(results: Dict[str, object]) -> str:
+    """Render the fixed-width Phase 9A results box."""
+    W = 30
 
+    def row(content: str) -> str:
+        content = content[:W]
+        return "║" + content + " " * (W - len(content)) + "║"
 
-def format_results(results: Dict[str, object]) -> str:
-    """Render the results dict as the fixed Phase 9A report text."""
-    hit = results.get("hit_rate", {}) or {}
-    dm = results.get("dm", {}) or {}
-    temporal = results.get("temporal", {}) or {}
-    gates = results.get("gates", {}) or {}
-    horizon = int(results.get("horizon", 1))
-    assets = results.get("assets", []) or []
+    def divider() -> str:
+        return "╠" + "═" * W + "╣"
 
-    by_asset = hit.get("by_asset", {}) or {}
-    by_regime = hit.get("by_regime", {}) or {}
-    n_events = int(hit.get("n_events", 0))
+    hit = results["hit_rate"]
+    dm = results["dm"]
+    temporal = results["temporal"]
+    gates = results["gates"]
+    by_asset = hit.get("by_asset", {})
+    horizon = results["horizon"]
 
-    if len(assets) > 1:
-        asset_label = "both (" + ", ".join(assets) + ")"
-    elif assets:
-        asset_label = assets[0]
-    else:
-        asset_label = "none"
-
-    def _gate(letter: str, label: str) -> str:
-        ok = bool(gates.get(letter, False))
-        return f"  G{letter[-1]} ({label}): {'PASS' if ok else 'FAIL'}"
-
+    pf = lambda b: "PASS" if b else "FAIL"
     lines: List[str] = []
-    lines.append("=" * 27)
-    lines.append("PHASE 9A RESULTS")
-    lines.append("=" * 27)
-    lines.append(f"Asset: {asset_label}")
-    lines.append(f"Breakout events: {n_events}")
-    lines.append(f"Horizon: t+{horizon}")
-    lines.append("")
-    lines.append(f"Hit rate (overall): {_fmt_pct(hit.get('hit_rate'))}")
-    lines.append(f"Hit rate (BTC): {_fmt_pct(by_asset.get('BTC/USDT'))}")
-    lines.append(f"Hit rate (ETH): {_fmt_pct(by_asset.get('ETH/USDT'))}")
-    lines.append(f"Hit rate (high regime): {_fmt_pct(by_regime.get('high'))}")
-    lines.append(f"Hit rate (low regime): {_fmt_pct(by_regime.get('low'))}")
-    lines.append("")
+    lines.append("╔" + "═" * W + "╗")
+    lines.append(row("   PHASE 9A RESULTS"))
+    lines.append(divider())
+    lines.append(row(f" Asset:           {results['asset_label']}"))
+    lines.append(row(f" Breakout events: {hit.get('n_events', 0)}"))
+    lines.append(row(f" Horizon:         t+{horizon}"))
+    lines.append(divider())
+    lines.append(row(f" Hit rate (all):  {_pct(hit.get('overall_hit_rate'))}"))
+    lines.append(row(f" Hit rate (BTC):  {_pct(by_asset.get('BTC/USDT'))}"))
+    lines.append(row(f" Hit rate (ETH):  {_pct(by_asset.get('ETH/USDT'))}"))
+    lines.append(divider())
     dm_stat = dm.get("dm_stat", 0.0)
-    dm_stat_str = f"{dm_stat:.2f}" if isinstance(dm_stat, (int, float)) else "N/A"
-    lines.append(f"DM statistic: {dm_stat_str}")
-    lines.append(f"p-value: {_fmt_pvalue(dm.get('p_value'))}")
-    lines.append("")
-    lines.append("Temporal stability:")
-    lines.append(f"  Older: {_fmt_pct(temporal.get('older_hit_rate'))}")
-    lines.append(f"  Middle: {_fmt_pct(temporal.get('middle_hit_rate'))}")
-    lines.append(f"  Recent: {_fmt_pct(temporal.get('recent_hit_rate'))}")
-    lines.append("")
-    lines.append("Gate results:")
-    lines.append(_gate("G1", "hit rate > 55%"))
-    lines.append(_gate("G2", "DM p < 0.05   "))
-    lines.append(_gate("G3", "both assets   "))
-    lines.append(_gate("G4", "stable windows"))
-    lines.append(_gate("G5", "no degradation"))
-    lines.append(_gate("G6", "n >= 30       "))
-    lines.append("")
-    lines.append(f"VERDICT: {gates.get('verdict', 'CLOSED')}")
-    lines.append("")
-    lines.append(f"DM conclusion: {dm.get('conclusion', 'N/A')}")
+    dm_stat_s = f"{dm_stat:.2f}" if isinstance(dm_stat, (int, float)) else "N/A"
+    lines.append(row(f" DM statistic:    {dm_stat_s}"))
+    try:
+        lines.append(row(f" p-value:         {float(dm.get('p_value', 1.0)):.3e}"))
+    except (TypeError, ValueError):
+        lines.append(row(" p-value:         N/A"))
+    lines.append(divider())
+    lines.append(row(" Temporal windows:"))
+    lines.append(row(f"   Older:   {_pct(temporal.get('older'))}"))
+    lines.append(row(f"   Middle:  {_pct(temporal.get('middle'))}"))
+    lines.append(row(f"   Recent:  {_pct(temporal.get('recent'))}"))
+    lines.append(divider())
+    lines.append(row(" GATES:"))
+    lines.append(row(f" G1 (hit > 55%):   {pf(gates.get('G1'))}"))
+    lines.append(row(f" G2 (DM p<0.05):   {pf(gates.get('G2'))}"))
+    lines.append(row(f" G3 (both assets): {pf(gates.get('G3'))}"))
+    lines.append(row(f" G4 (stability):   {pf(gates.get('G4'))}"))
+    lines.append(row(f" G5 (no degrade):  {pf(gates.get('G5'))}"))
+    lines.append(row(f" G6 (n >= 30):     {pf(gates.get('G6'))}"))
+    lines.append(divider())
+    lines.append(row(f" VERDICT: {gates.get('verdict', 'CLOSED')}"))
+    lines.append("╚" + "═" * W + "╝")
     return "\n".join(lines)
 
 
-def save_results(text: str, path: str = RESULTS_PATH) -> str:
-    """Write the report to ``path`` as markdown. Returns the path."""
-    import datetime as _dt
-    header = (
-        f"# Phase 9A Results\n\n"
-        f"_Pre-registered hypothesis:_ breakout-bar candle direction persists "
-        f"into the next 1/2/3 bars.\n\n"
-        f"_Generated:_ {_dt.datetime.now(_dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}\n\n"
-        f"```\n"
-    )
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write(header + text + "\n```\n")
-    return path
+def analyze(df: pd.DataFrame, asset: str, horizon: int) -> Dict[str, object]:
+    """Run the full analysis on an in-memory DataFrame (testable core)."""
+    sub = filter_asset(df, asset)
+    asset_label = "both (BTC/USDT + ETH/USDT)" if asset == "both" else asset
+    gates = run_all_gate_checks(sub, horizon=horizon)
+    return {
+        "asset_label": asset_label,
+        "horizon": horizon,
+        "hit_rate": gates["details"]["hit_rate"],
+        "dm": gates["details"]["dm"],
+        "temporal": gates["details"]["temporal"],
+        "gates": gates,
+        "g6_ok": all(v >= MIN_EVENTS_PER_ASSET
+                     for v in _per_asset_counts(sub, horizon).values())
+        if _per_asset_counts(sub, horizon) else False,
+    }
 
 
-# ---------------------------------------------------------------------------
-# I/O providers (lazy-imported, isolated from the pure core)
-# ---------------------------------------------------------------------------
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description="Phase 9A breakout-direction analysis")
+    parser.add_argument("--data-file", required=True, help="CSV of Phase 9A data.")
+    parser.add_argument("--asset", default="both",
+                        choices=["BTC/USDT", "ETH/USDT", "both"],
+                        help="Asset to analyse (default: both).")
+    parser.add_argument("--horizon", type=int, default=PRIMARY_HORIZON,
+                        choices=[1, 2, 3], help="Forward horizon (default: 1).")
+    parser.add_argument("--output", default=None, help="Optional markdown output path.")
+    args = parser.parse_args(argv)
 
-def fetch_breakout_rows(db_url: str, assets: Iterable[str]) -> pd.DataFrame:
-    """Fetch completed breakout rows (``breakout_flag = 1``) from Supabase.
+    df = load_data(args.data_file)
+    results = analyze(df, args.asset, args.horizon)
 
-    Returns a DataFrame with the ``har_predictions`` columns. Only rows with a
-    non-null ``actual_range`` (i.e. the bar has closed) are returned — Phase 9A
-    never reasons about bars that have not closed yet.
-    """
-    try:
-        import psycopg  # type: ignore
-        from psycopg.rows import dict_row  # type: ignore
-    except ImportError as exc:  # pragma: no cover - postgres is optional in CI
-        raise RuntimeError(
-            "psycopg is required to read from Supabase "
-            "(pip install 'psycopg[binary]')") from exc
+    # G6 pre-check: still collecting data?
+    counts = _per_asset_counts(filter_asset(df, args.asset), args.horizon)
+    needed = [a for a in (list(BOTH_ASSETS) if args.asset == "both" else [args.asset])
+              if counts.get(a, 0) < MIN_EVENTS_PER_ASSET]
+    if needed:
+        worst = min((counts.get(a, 0) for a in needed), default=0)
+        print(f"Not enough data yet ({worst} of {MIN_EVENTS_PER_ASSET} needed for "
+              f"{', '.join(needed)}).")
+        if args.output:
+            _save(args.output, format_report(results))
+        return 0
 
-    url = (db_url or "").strip().strip('"').strip("'")
-    if not url:
-        raise ValueError("db_url is empty")
-    if not (url.startswith("postgres://") or url.startswith("postgresql://")):
-        url = "postgresql://" + url
-
-    assets = [str(a).upper() for a in assets]
-    if not assets:
-        return pd.DataFrame()
-
-    query = (
-        'SELECT id, "timestamp", asset, timeframe, har_predicted_range, '
-        "coef_b0, coef_b1, coef_b2, coef_b3, n_obs, regime, actual_range, "
-        "prediction_error, abs_prediction_error, breakout_flag, created_at "
-        "FROM public.har_predictions "
-        "WHERE breakout_flag = 1 AND actual_range IS NOT NULL "
-        "AND asset = ANY(%s) "
-        'ORDER BY "timestamp" ASC'
-    )
-    conn = psycopg.connect(url, row_factory=dict_row)
-    try:
-        with conn.cursor() as cur:
-            cur.execute(query, (assets,))
-            rows = cur.fetchall()
-    finally:
-        conn.close()
-    return pd.DataFrame(rows)
-
-
-def fetch_candle_history(
-    asset: str,
-    timeframe: str = TIMEFRAME,
-    n: int = DEFAULT_CANDLE_HISTORY,
-    exchange=None,
-    now_ms: Optional[int] = None,
-) -> pd.DataFrame:
-    """Fetch the latest ``n`` *closed* candles for ``asset`` via CCXT.
-
-    Returns a frame with columns ``[timestamp, open, high, low, close,
-    volume]`` where ``timestamp`` is ISO8601 UTC. The still-forming bar is
-    dropped so no future/incomplete data enters the analysis.
-    """
-    import ccxt  # type: ignore
-
-    if exchange is None:
-        exchange = ccxt.kucoin({"enableRateLimit": True,
-                                "options": {"defaultType": "spot"}})
-    if now_ms is None:
-        now_ms = int(time.time() * 1000)
-    bar_ms = {"1h": _BAR_MS, "4h": 14_400_000, "1d": 86_400_000}.get(timeframe, _BAR_MS)
-
-    import datetime as _dt
-    raw = exchange.fetch_ohlcv(asset, timeframe, limit=n) or []
-    rows = []
-    for r in raw:
-        if len(r) < 6:
-            continue
-        ts = int(r[0])
-        if ts + bar_ms > now_ms:
-            continue  # still forming
-        iso = _dt.datetime.fromtimestamp(ts / 1000.0, tz=_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        rows.append({"timestamp": iso, "open": float(r[1]), "high": float(r[2]),
-                     "low": float(r[3]), "close": float(r[4]), "volume": float(r[5])})
-    return pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close", "volume"])
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-
-def _build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
-        prog="phase9a",
-        description="Phase 9A breakout-direction continuation experiment.",
-    )
-    p.add_argument("--db-url", default=os.environ.get("SUPABASE_DB_URL", ""),
-                   help="Supabase connection string (or set SUPABASE_DB_URL).")
-    p.add_argument("--asset", default="both", choices=["BTC/USDT", "ETH/USDT", "both"],
-                   help="Asset to analyse (default: both).")
-    p.add_argument("--horizon", type=int, default=1, choices=[1, 2, 3],
-                   help="Forward horizon in bars (default: 1 = t+1).")
-    p.add_argument("--dry-run", action="store_true",
-                   help="Run without writing PHASE9A_RESULTS.md.")
-    p.add_argument("--candles", type=int, default=DEFAULT_CANDLE_HISTORY,
-                   help="Number of candles to fetch per asset.")
-    return p
-
-
-def main(argv: Optional[List[str]] = None) -> Dict[str, object]:
-    """CLI entry point. Returns the analysis results dict."""
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    args = _build_parser().parse_args(argv)
-
-    assets = ["BTC/USDT", "ETH/USDT"] if args.asset == "both" else [args.asset]
-    breakout_rows = fetch_breakout_rows(args.db_url, assets)
-    candles_by_asset = {a: fetch_candle_history(a, TIMEFRAME, args.candles) for a in assets}
-
-    results = run_analysis(breakout_rows, candles_by_asset, horizon=args.horizon)
-    text = format_results(results)
+    text = format_report(results)
     print(text)
-    if not args.dry_run:
-        try:
-            saved = save_results(text)
-            print(f"\nResults saved to {saved}")
-        except OSError as exc:
-            logger.error("Could not write results file: %s", exc)
-    return results
+    if args.output:
+        _save(args.output, text)
+    return 0
+
+
+def _save(path: str, text: str) -> None:
+    import datetime as _dt
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("# Phase 9A Results\n\n")
+        fh.write(f"_Generated:_ {_dt.datetime.now(_dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}\n\n")
+        fh.write("```\n" + text + "\n```\n")
 
 
 if __name__ == "__main__":  # pragma: no cover
-    main()
+    sys.exit(main())

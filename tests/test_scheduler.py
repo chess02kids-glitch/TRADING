@@ -311,6 +311,71 @@ class TestRunSingleCycle:
         assert ts_str(15) > ts_str(14)  # strictly after the last closed bar
         assert all(r["actual_range"] is None for r in rows)
 
+    # --- Phase 9A forward-return tracking integration ---
+
+    def _breakout_candles(self):
+        """Fake candles where the 14:00 bar is a 3x breakout closing up."""
+        candles = make_fake_candles(
+            start_ts=int((BASE + timedelta(hours=10)).timestamp() * 1000))
+        target_ts = int((BASE + timedelta(hours=14)).timestamp() * 1000)
+        # range 300 (3x predicted 100), close 100050 > open 100000 -> UP (+1)
+        return [
+            Candle(target_ts, 100000.0, 100150.0, 99850.0, 100050.0, 10.0)
+            if c.timestamp_ms == target_ts else c for c in candles
+        ]
+
+    def test_forward_tracking_logged_on_breakout(self, tmp_path):
+        cfg = make_scheduler_config(tmp_path)
+        log_prediction(cfg.db_path, ts_str(14), "BTC/USDT", "1h", make_forecast(100.0))
+        candles = self._breakout_candles()
+        with patch(f"{MOD}.fetch_candles", return_value=candles), \
+             patch(f"{MOD}.send_forecast", return_value=ok_send()), \
+             patch(f"{MOD}.send_breakout", return_value=ok_send()), \
+             patch(f"{MOD}.log_breakout_for_tracking") as tracker:
+            run_single_cycle(make_telegram_config(), cfg, now=self._cycle_now())
+        tracker.assert_called_once()
+        args = tracker.call_args.args
+        # (conn, breakout_timestamp, asset, direction, close_price)
+        assert args[1] == ts_str(14)
+        assert args[2] == "BTC/USDT"
+        assert args[3] == 1
+        assert args[4] == pytest.approx(100050.0)
+
+    def test_forward_returns_updated_each_cycle(self, tmp_path):
+        cfg = make_scheduler_config(tmp_path)
+        with patch(f"{MOD}.fetch_candles", return_value=make_fake_candles()), \
+             patch(f"{MOD}.send_forecast", return_value=ok_send()), \
+             patch(f"{MOD}.update_forward_returns") as upd:
+            run_single_cycle(make_telegram_config(), cfg, now=self._cycle_now())
+        upd.assert_called_once()  # runs every cycle, error-isolated
+
+    def test_scheduler_continues_if_logger_fails(self, tmp_path):
+        cfg = make_scheduler_config(tmp_path)
+        log_prediction(cfg.db_path, ts_str(14), "BTC/USDT", "1h", make_forecast(100.0))
+        candles = self._breakout_candles()
+        with patch(f"{MOD}.fetch_candles", return_value=candles), \
+             patch(f"{MOD}.send_forecast", return_value=ok_send()), \
+             patch(f"{MOD}.send_breakout", return_value=ok_send()), \
+             patch(f"{MOD}.log_breakout_for_tracking",
+                   side_effect=RuntimeError("boom")):
+            # Must not raise; _track_breakout swallows the logger failure.
+            result = run_single_cycle(make_telegram_config(), cfg,
+                                      now=self._cycle_now())
+        assert "BTC/USDT" in result.breakouts  # breakout still detected/sent
+
+    def test_no_tracking_logged_when_no_breakout(self, tmp_path):
+        cfg = make_scheduler_config(tmp_path)
+        # predicted 540, realized 540 -> not a breakout
+        log_prediction(cfg.db_path, ts_str(14), "BTC/USDT", "1h", make_forecast(540.0))
+        candles = make_fake_candles(
+            start_ts=int((BASE + timedelta(hours=10)).timestamp() * 1000))
+        with patch(f"{MOD}.fetch_candles", return_value=candles), \
+             patch(f"{MOD}.send_forecast", return_value=ok_send()), \
+             patch(f"{MOD}.send_breakout"), \
+             patch(f"{MOD}.log_breakout_for_tracking") as tracker:
+            run_single_cycle(make_telegram_config(), cfg, now=self._cycle_now())
+        tracker.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # run_calibration_cycle

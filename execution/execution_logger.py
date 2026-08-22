@@ -1,45 +1,39 @@
-"""Execution audit log — signals, order attempts, results, and skips.
+"""Execution audit log — signals, attempts, results, and skips.
 
-A completely separate SQLite store from ``har_predictions``. Every signal the
-execution layer sees, every order it tries to place, every outcome and every
-skip is recorded here with a UTC timestamp and an ``event_type`` tag, so the
-full paper-trading decision trail is replayable. Nothing in this module
-touches the live HAR bot or the research DB.
+A completely separate, in-memory + optional plain-text audit trail from the
+``har_predictions`` research store. Every signal the execution layer sees,
+every order it tries to place, every outcome and every skip is recorded with a
+UTC timestamp and an ``event_type`` tag, so the full paper-trading decision
+trail is replayable via :func:`get_log`.
+
+* :func:`get_log` returns the structured list of all events.
+* Plain-text lines are also appended to a log file when a path is configured
+  via :func:`configure` (best-effort; defaults to in-memory only).
+* :func:`reset` clears the in-memory log (test isolation).
+
+Nothing here touches the live HAR bot or any database.
 """
 from __future__ import annotations
 
 import json
 import logging
-import sqlite3
-from contextlib import closing
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_DB_PATH = str(Path(__file__).resolve().parent / "execution_log.db")
-
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS execution_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp TEXT NOT NULL,
-    event_type TEXT NOT NULL,
-    asset TEXT,
-    direction INTEGER,
-    details TEXT,
-    reason TEXT,
-    created_at TEXT NOT NULL
-)
-"""
+# In-memory structured log (the source of get_log()).
+_LOG: List[Dict[str, Any]] = []
+# Optional plain-text log file path (None = in-memory only).
+_LOG_PATH: Optional[str] = None
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _to_jsonable(obj: Any) -> Any:
+def _jsonable(obj: Any) -> Any:
     if obj is None:
         return None
     if is_dataclass(obj):
@@ -47,77 +41,52 @@ def _to_jsonable(obj: Any) -> Any:
     return obj
 
 
-class ExecutionLogger:
-    """Append-only audit log for the paper execution layer."""
+def configure(log_path: Optional[str]) -> None:
+    """Enable/disable plain-text file logging (``None`` = in-memory only)."""
+    global _LOG_PATH
+    _LOG_PATH = log_path
 
-    def __init__(self, db_path: str = DEFAULT_DB_PATH) -> None:
-        self.db_path = str(db_path)
-        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        with closing(sqlite3.connect(self.db_path)) as conn:
-            conn.execute(_SCHEMA)
-            conn.commit()
 
-    def _connect(self):
-        conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL;")
-        return conn
+def reset() -> None:
+    """Clear the in-memory log (used by tests for isolation)."""
+    _LOG.clear()
 
-    def _write(self, event_type: str, asset: str = "", direction: int = 0,
-               details: Any = None, reason: str = "") -> None:
-        details_json = json.dumps(_to_jsonable(details), default=str) if details is not None else None
-        with closing(self._connect()) as conn:
-            conn.execute(
-                """INSERT INTO execution_log
-                   (timestamp, event_type, asset, direction, details, reason, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (_now_iso(), event_type, asset, int(direction or 0),
-                 details_json, reason, _now_iso()),
-            )
-            conn.commit()
 
-    # -- typed events ------------------------------------------------------
+def _append(event_type: str, **fields: Any) -> None:
+    entry: Dict[str, Any] = {
+        "timestamp": _now_iso(),
+        "event_type": event_type,
+    }
+    entry.update(fields)
+    _LOG.append(entry)
+    if _LOG_PATH:
+        try:
+            with open(_LOG_PATH, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(entry, default=str) + "\n")
+        except OSError as exc:  # pragma: no cover - best-effort file logging
+            logger.warning("execution_logger file write failed: %s", exc)
 
-    def log_signal(self, signal_input: Any) -> None:
-        """Record an incoming signal (dataclass or dict-like)."""
-        sig = _to_jsonable(signal_input)
-        asset = sig.get("asset", "") if isinstance(sig, dict) else ""
-        direction = sig.get("direction", 0) if isinstance(sig, dict) else 0
-        self._write("signal", asset=asset, direction=direction, details=sig)
 
-    def log_order_attempt(self, signal: Any, params: Any) -> None:
-        """Record an order attempt (signal + the built OrderParams)."""
-        sig = _to_jsonable(signal)
-        asset = sig.get("asset", "") if isinstance(sig, dict) else ""
-        direction = sig.get("direction", 0) if isinstance(sig, dict) else 0
-        self._write("order_attempt", asset=asset, direction=direction,
-                    details={"signal": sig, "order_params": _to_jsonable(params)})
+def log_signal(signal: Any) -> None:
+    """Record an incoming signal (dataclass or dict-like)."""
+    _append("signal", signal=_jsonable(signal))
 
-    def log_order_result(self, result: Any) -> None:
-        """Record an order outcome (CCXT order dict or status dict)."""
-        res = _to_jsonable(result)
-        asset = ""
-        if isinstance(res, dict):
-            asset = res.get("symbol", "") or res.get("asset", "")
-        self._write("order_result", asset=asset, details=res)
 
-    def log_skip(self, reason: str) -> None:
-        """Record a skipped trade and the reason."""
-        self._write("skip", reason=str(reason))
+def log_skip(reason: str, signal: Any) -> None:
+    """Record a skipped trade with the reason and the originating signal."""
+    _append("skip", reason=str(reason), signal=_jsonable(signal))
 
-    def get_execution_log(self) -> List[Dict[str, Any]]:
-        """Return all log rows (oldest first), parsing the JSON ``details``."""
-        with closing(self._connect()) as conn:
-            rows = conn.execute(
-                "SELECT * FROM execution_log ORDER BY id"
-            ).fetchall()
-        out: List[Dict[str, Any]] = []
-        for r in rows:
-            d = {k: r[k] for k in r.keys()}
-            if d.get("details"):
-                try:
-                    d["details"] = json.loads(d["details"])
-                except (TypeError, ValueError):
-                    pass
-            out.append(d)
-        return out
+
+def log_order_attempt(params: Any) -> None:
+    """Record an order attempt (the built OrderParams)."""
+    _append("order_attempt", order_params=_jsonable(params))
+
+
+def log_order_result(result: Optional[Dict[str, Any]], success: bool) -> None:
+    """Record an order outcome (CCXT order dict, or None) and success flag."""
+    _append("order_result", result=_jsonable(result), success=bool(success))
+
+
+def get_log() -> List[Dict[str, Any]]:
+    """Return a copy of the structured event list (oldest first)."""
+    return [dict(e) for e in _LOG]
