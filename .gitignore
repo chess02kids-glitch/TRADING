@@ -97,3 +97,8 @@ live_positions.json
 # === Generated QuantStats reports (uploaded as Actions artifacts) ===
 reports/*.html
 reports/*.csv
+
+# === Phase 9A / paper execution runtime artifacts (local SQLite, not Supabase) ===
+execution/*.db
+execution/*.db-wal
+execution/*.db-shm

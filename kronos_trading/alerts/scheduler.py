@@ -59,7 +59,9 @@ from kronos_trading.alerts.breakout_detector import (
 )
 from kronos_trading.alerts.har_forecaster import (
     HarForecast,
+    apply_bias_correction,
     classify_regime,
+    compute_bias_correction,
     fetch_candles,
     predict_next_range,
 )
@@ -69,11 +71,17 @@ from kronos_trading.alerts.market_context import (
 )
 from kronos_trading.alerts.prediction_logger import (
     DEFAULT_DB_PATH,
+    _connect,
     get_pending_predictions,
     get_prediction_history,
     initialize_db,
     log_prediction,
     update_actual,
+)
+from kronos_trading.alerts.forward_return_logger import (
+    create_phase9a_table,
+    log_breakout_for_tracking,
+    update_forward_returns,
 )
 from kronos_trading.alerts.telegram_sender import (
     SendResult,
@@ -202,6 +210,63 @@ def seconds_until_next_cycle(
 
 
 # ---------------------------------------------------------------------------
+# Phase 9A forward-return tracking helpers (best-effort, never raise)
+# ---------------------------------------------------------------------------
+
+def _ms_to_iso(ms: int) -> str:
+    return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).strftime(_ISO_FMT)
+
+
+def _candles_to_df(candles: List[Any]):
+    """Candle list -> DataFrame[timestamp(ISO), close] for forward-return lookup."""
+    import pandas as pd
+    return pd.DataFrame({
+        "timestamp": [_ms_to_iso(int(c.timestamp_ms)) for c in candles],
+        "close": [float(c.close) for c in candles],
+    })
+
+
+def _phase9a_conn(db_path: str):
+    """Open a raw (DBWrapper-managed) connection for forward-return logging."""
+    wrapper = _connect(db_path)
+    return wrapper, wrapper.conn
+
+
+def _track_breakout(db_path: str, row_ts: str, asset: str,
+                    direction: int, close_price: float) -> None:
+    """Log a breakout for Phase 9A tracking (best-effort, never raises).
+
+    A failure here is logged and swallowed so it can never break the main
+    prediction/alert loop.
+    """
+    try:
+        wrapper, conn = _phase9a_conn(db_path)
+        try:
+            create_phase9a_table(conn)
+            log_breakout_for_tracking(conn, row_ts, asset, direction, close_price)
+        finally:
+            wrapper.close()
+    except Exception as exc:  # noqa: BLE001 - RULE 1: never crash the cycle
+        logger.warning("Phase 9A tracking failed for %s %s: %s", asset, row_ts, exc)
+
+
+def _update_phase9a_returns(db_path: str, now_iso: str, candles_by_asset) -> int:
+    """Fill realised forward returns (best-effort, never raises)."""
+    try:
+        wrapper, conn = _phase9a_conn(db_path)
+        try:
+            create_phase9a_table(conn)
+            n = update_forward_returns(conn, now_iso, candles_by_asset)
+        finally:
+            wrapper.close()
+        logger.info("Updated %d forward return rows", n)
+        return n
+    except Exception as exc:  # noqa: BLE001 - RULE 1: never crash the cycle
+        logger.warning("Phase 9A forward-return update failed: %s", exc)
+        return 0
+
+
+# ---------------------------------------------------------------------------
 # Pending-prediction fill
 # ---------------------------------------------------------------------------
 
@@ -256,9 +321,15 @@ def _fill_pending(
         breakout = check_breakout(
             actual, float(row["har_predicted_range"]),
             threshold=scheduler_config.breakout_threshold,
+            candle_open=float(candle.open),
+            candle_close=float(candle.close),
         )
         if breakout.is_breakout:
             result.breakouts[asset] = breakout
+            if breakout.breakout_direction is not None:
+                _track_breakout(db, row_ts, asset,
+                                breakout.breakout_direction,
+                                float(candle.close))
             key = f"breakout:{asset}:{row_ts}"
             result.send_results[key] = send_breakout(
                 telegram_config, asset, tf, breakout, row_ts)
@@ -304,6 +375,7 @@ def run_single_cycle(
         errors=[], forecasts={}, breakouts={}, send_results={},
         duration_seconds=0.0,
     )
+    candles_by_asset: Dict[str, Any] = {}
 
     try:
         initialize_db(db)
@@ -344,6 +416,7 @@ def run_single_cycle(
                            asset, exc)
             continue
         result.assets_processed.append(asset)
+        candles_by_asset[asset] = _candles_to_df(candles)
 
         try:
             _fill_pending(telegram_config, scheduler_config, asset, candles,
@@ -359,6 +432,16 @@ def run_single_cycle(
                           for c in candles[-720:]]
             regime = classify_regime(forecast.predicted_range, historical)
             forecast = dataclasses.replace(forecast, regime=regime)
+            # Phase 9A additive bias correction (past-only; never modifies HAR
+            # OLS). Best-effort: a failure here leaves the forecast uncorrected.
+            try:
+                bias = compute_bias_correction(
+                    get_prediction_history(db, asset, tf), window_days=7)
+                if bias != 0.0:
+                    forecast = apply_bias_correction(forecast, bias)
+            except Exception as exc:  # noqa: BLE001 - bias is optional
+                logger.warning("Cycle %s: bias correction failed for %s: %s",
+                               cycle_ts, asset, exc)
             pred_ts = _bar_open_time_utc(now, tf).strftime(_ISO_FMT)
             log_prediction(db, pred_ts, asset, tf, forecast, market_context=context)
             result.forecasts[asset] = forecast
@@ -366,6 +449,11 @@ def run_single_cycle(
             result.errors.append(f"{asset}: prediction failed: {exc}")
             logger.warning("Cycle %s: prediction failed for %s: %s",
                            cycle_ts, asset, exc)
+
+    # Phase 9A: fill realised forward returns for any target bar that has now
+    # closed, using the candles fetched this cycle. Runs every cycle and is
+    # error-isolated so it can never break the prediction/alert loop.
+    _update_phase9a_returns(db, now.strftime(_ISO_FMT), candles_by_asset)
 
 
     # Combined forecast message (BTC + ETH by send_forecast's contract).

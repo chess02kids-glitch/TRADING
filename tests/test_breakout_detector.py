@@ -328,3 +328,48 @@ class TestFormatCalibrationMessage:
         assert "Worst ratio: N/A" in msg
         assert "Best ratio:  N/A" in msg
         assert "Degrading:  ✅ NO" in msg
+
+
+# ---------------------------------------------------------------------------
+# Phase 9A: breakout-bar candle direction
+# ---------------------------------------------------------------------------
+
+class TestBreakoutDirection:
+    """check_breakout derives the breakout bar's candle direction (Phase 9A)."""
+
+    def test_direction_positive_when_close_above_open(self):
+        r = check_breakout(250.0, 100.0, candle_open=100.0, candle_close=110.0)
+        assert r.is_breakout is True
+        assert r.breakout_direction == 1
+        assert r.candle_open == 100.0
+        assert r.candle_close == 110.0
+
+    def test_direction_negative_when_close_below_open(self):
+        r = check_breakout(250.0, 100.0, candle_open=110.0, candle_close=100.0)
+        assert r.is_breakout is True
+        assert r.breakout_direction == -1
+
+    def test_direction_none_when_not_breakout(self):
+        r = check_breakout(150.0, 100.0, candle_open=100.0, candle_close=110.0)
+        assert r.is_breakout is False
+        assert r.breakout_direction is None
+        assert r.candle_open is None and r.candle_close is None
+
+    def test_direction_none_when_params_missing(self):
+        r = check_breakout(250.0, 100.0)  # breakout, but no candle prices
+        assert r.is_breakout is True
+        assert r.breakout_direction is None
+        assert r.candle_open is None and r.candle_close is None
+
+    def test_direction_equal_open_close_is_positive(self):
+        r = check_breakout(250.0, 100.0, candle_open=100.0, candle_close=100.0)
+        assert r.breakout_direction == 1  # close >= open -> UP
+
+    def test_existing_fields_unaffected_by_new_params(self):
+        without = check_breakout(250.0, 100.0)
+        with_dir = check_breakout(250.0, 100.0, candle_open=100.0, candle_close=110.0)
+        assert without.is_breakout == with_dir.is_breakout
+        assert without.ratio == with_dir.ratio
+        assert without.severity == with_dir.severity
+        assert without.actual_range == with_dir.actual_range
+        assert without.predicted_range == with_dir.predicted_range

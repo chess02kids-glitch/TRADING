@@ -5,3 +5,4 @@ requests
 python-dotenv
 psycopg[binary]
 yfinance>=0.2.40
+scipy>=1.10

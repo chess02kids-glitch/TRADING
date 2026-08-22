@@ -47,6 +47,7 @@ from dashboard.data_loader import (
     fetch_predictions,
     fetch_breakouts,
     fetch_reports,
+    fetch_phase9a_summary,
 )
 from dashboard.charts import (
     chart_predicted_vs_actual,
@@ -55,6 +56,9 @@ from dashboard.charts import (
     chart_prediction_errors,
     chart_calibration_gauge,
     chart_har_coefficients,
+    plot_coefficient_drift,
+    plot_improvement_confidence,
+    daily_mae_frame,
 )
 from dashboard.utils import (
     format_mae,
@@ -276,12 +280,14 @@ def render_charts_section(
         f"### 📈 {asset} Charts",
         unsafe_allow_html=False)
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "Predicted vs Actual",
         "Daily MAE",
         "Regime Distribution",
         "Error Distribution",
         "HAR Coefficients",
+        "Coefficient Stability",
+        "Rolling Improvement + CI",
     ])
 
     with tab1:
@@ -320,6 +326,22 @@ def render_charts_section(
             fig,
             use_container_width=True,
             key=f"coefs_{asset}")
+
+    with tab6:
+        st.caption("All four HAR coefficients over time. Flat lines ⇒ stable model.")
+        fig = plot_coefficient_drift(df, asset)
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
+            key=f"coef_drift_{asset}")
+
+    with tab7:
+        st.caption("Rolling 7-day improvement % with a 95% confidence band.")
+        fig = plot_improvement_confidence(daily_mae_frame(df), asset)
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
+            key=f"improvement_ci_{asset}")
 
 
 def render_breakouts_section(
@@ -521,6 +543,56 @@ def render_reports_section(daily_df, weekly_df):
                 with st.expander(f"Weekly Report: {row['report_date']}"):
                     st.json(json.loads(row['report_data']) if isinstance(row['report_data'], str) else row['report_data'])
 
+def render_phase9a_section():
+    """Render the Phase 9A breakout-direction tracking section."""
+    st.header("🔬 Phase 9A — Breakout Direction Tracking")
+    st.caption(
+        "Testing whether a breakout bar's candle direction (UP/DOWN) "
+        "predicts the next 1/2/3 bars. Research only — no trades placed.")
+
+    summary = fetch_phase9a_summary()
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total breakout events tracked",
+                  summary["total_breakouts"])
+    with col2:
+        st.metric("Forward returns filled",
+                  summary["forward_returns_filled"])
+    with col3:
+        if summary["hit_rate_t1"] is None:
+            st.metric("Hit rate at t+1", "Need more data")
+        else:
+            st.metric("Hit rate at t+1",
+                      f"{summary['hit_rate_t1'] * 100:.1f}%")
+
+    progress = min(1.0, summary["total_breakouts"] / 30.0)
+    st.progress(
+        progress,
+        text=f"{summary['total_breakouts']} of 30 events needed")
+
+    sub1, sub2 = st.columns(2)
+    with sub1:
+        st.metric("⬆️ UP breakouts", summary["up_breakouts"])
+    with sub2:
+        st.metric("⬇️ DOWN breakouts", summary["down_breakouts"])
+
+    st.info(f"**Status:** {summary['status_message']}")
+
+    if summary["hit_rate_t1"] is not None:
+        hr = summary["hit_rate_t1"]
+        if hr > 0.55:
+            color, emoji = "good", "🟢"
+        elif hr >= 0.50:
+            color, emoji = "neutral", "🟡"
+        else:
+            color, emoji = "bad", "🔴"
+        st.markdown(
+            f"<div class='metric-card'><span class='{color}'>{emoji} "
+            f"Current t+1 hit rate: {hr * 100:.1f}%</span></div>",
+            unsafe_allow_html=True)
+
+
 def main():
     """Main dashboard entry point."""
     apply_custom_css()
@@ -580,6 +652,11 @@ def main():
 
     # Breakouts section (all assets)
     render_breakouts_section(breakouts_df)
+
+    st.divider()
+
+    # Phase 9A breakout-direction tracking section
+    render_phase9a_section()
 
     st.divider()
 

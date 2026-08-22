@@ -29,7 +29,8 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -77,11 +78,20 @@ class HarForecast:
     ``regime`` is optional metadata (``'low'``/``'medium'``/``'high'``) - it is
     NOT computed by ``predict_next_range``; callers attach it afterwards from
     ``classify_regime`` (e.g. ``dataclasses.replace(forecast, regime=...)``).
+
+    Phase 9A bias correction: ``bias_correction`` is the mean signed error of
+    HAR over the last 7 days of completed bars (``mean(actual - predicted)``;
+    negative ⇒ HAR over-predicts, so the correction reduces the forecast).
+    ``corrected_predicted_range = predicted_range + bias_correction``. Both
+    default to ``0.0`` (no correction) so uncorrected forecasts are unchanged.
+    The original HAR OLS formula is never modified.
     """
     predicted_range: float
     coefficients: Tuple[float, float, float, float]
     n_obs: int
     regime: Optional[str] = None
+    bias_correction: float = 0.0
+    corrected_predicted_range: float = 0.0
 
 
 def _normalize_symbol(asset: str) -> str:
@@ -294,6 +304,109 @@ def predict_next_range(candles: List[Candle]) -> HarForecast:
         coefficients=(float(beta[0]), float(beta[1]), float(beta[2]), float(beta[3])),
         n_obs=int(len(y)),
     )
+
+
+def last_completed_open_close(candles: List[Candle]) -> Tuple[Optional[float], Optional[float]]:
+    """Open/close of the most recent *completed* candle (Phase 9A).
+
+    The candle series passed to the forecaster is ascending and contains only
+    closed bars (``fetch_candles`` drops the forming bar), so the last element
+    is the most recent completed bar. Its ``open`` / ``close`` are exactly what
+    Phase 9A needs to derive the breakout-bar direction, and the scheduler
+    forwards them into ``check_breakout(..., candle_open=, candle_close=)``.
+
+    Returns ``(None, None)`` for an empty series so callers can treat a missing
+    bar defensively without a special-case exception.
+    """
+    if not candles:
+        return None, None
+    last = candles[-1]
+    return float(last.open), float(last.close)
+
+
+# ---------------------------------------------------------------------------
+# Phase 9A bias correction (additive, past-only; never modifies HAR OLS)
+# ---------------------------------------------------------------------------
+
+def _parse_ts(value) -> Optional[datetime]:
+    """Parse an ISO8601 string / datetime / Timestamp to a UTC datetime."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    try:
+        import pandas as pd  # local import to avoid a hard pandas dependency
+        ts = pd.Timestamp(value)
+    except Exception:
+        return None
+    if ts is None or not np.isfinite(ts.value):
+        return None
+    return ts.to_pydatetime().astimezone(timezone.utc) if ts.tzinfo else ts.to_pydatetime().replace(tzinfo=timezone.utc)
+
+
+def compute_bias_correction(
+    history: List[dict],
+    window_days: int = 7,
+    min_bars: int = 24,
+) -> float:
+    """Mean signed HAR error over the last ``window_days`` of completed bars.
+
+    Uses **only past completed predictions** (rows with a non-null
+    ``actual_range``) - never look-ahead. The reference "now" is the newest
+    timestamp in ``history`` (deterministic, clock-independent). Rows older
+    than ``window_days`` from that reference are excluded.
+
+    Formula::
+
+        bias = mean(actual_range - har_predicted_range)
+
+    over the in-window completed bars. Returns ``0.0`` when fewer than
+    ``min_bars`` (default 24) in-window completed bars are available, so a
+    too-short window applies no correction rather than a noisy one.
+    """
+    if not history:
+        return 0.0
+
+    parsed = []
+    for row in history:
+        actual = row.get("actual_range")
+        predicted = row.get("har_predicted_range")
+        ts = _parse_ts(row.get("timestamp"))
+        if ts is None:
+            continue
+        if actual is None or predicted is None:
+            continue
+        try:
+            a = float(actual)
+            p = float(predicted)
+        except (TypeError, ValueError):
+            continue
+        if not (np.isfinite(a) and np.isfinite(p)):
+            continue
+        parsed.append((ts, a - p))
+
+    if not parsed:
+        return 0.0
+
+    ref = max(ts for ts, _ in parsed)
+    cutoff = ref - timedelta(days=int(window_days))
+    in_window = [err for ts, err in parsed if ts >= cutoff]
+    if len(in_window) < int(min_bars):
+        return 0.0
+    return float(sum(in_window) / len(in_window))
+
+
+def apply_bias_correction(forecast: "HarForecast", bias: float) -> "HarForecast":
+    """Return a copy of ``forecast`` with the additive bias correction applied.
+
+    ``corrected_predicted_range = predicted_range + bias`` (``bias`` is
+    ``mean(actual - predicted)``: negative when HAR over-predicts, so the
+    corrected range is smaller). The original HAR OLS prediction
+    (``predicted_range``) is preserved unchanged.
+    """
+    return replace(forecast,
+                   bias_correction=float(bias),
+                   corrected_predicted_range=float(forecast.predicted_range) + float(bias))
 
 
 def compute_regime_thresholds(

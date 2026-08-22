@@ -52,6 +52,11 @@ class BreakoutResult:
     ratio: Optional[float]          # None when predicted <= 0
     threshold: float
     severity: str                   # "none" / "moderate" / "severe" / "extreme"
+    # Phase 9A: breakout-bar candle direction. Populated only when this is a
+    # breakout AND the caller supplied the breakout bar's open/close.
+    breakout_direction: Optional[int] = None     # +1 UP / -1 DOWN
+    candle_open: Optional[float] = None          # breakout bar open price
+    candle_close: Optional[float] = None         # breakout bar close price
 
 
 @dataclass
@@ -86,6 +91,8 @@ def check_breakout(
     actual_range: float,
     predicted_range: float,
     threshold: float = BREAKOUT_THRESHOLD,
+    candle_open: Optional[float] = None,
+    candle_close: Optional[float] = None,
 ) -> BreakoutResult:
     """Classify one realized range against its HAR prediction.
 
@@ -94,6 +101,13 @@ def check_breakout(
     division by zero is impossible.
 
     Severity bands are fixed (2.0 / 3.0 / 5.0) regardless of ``threshold``.
+
+    Phase 9A: when ``candle_open`` and ``candle_close`` are both provided and
+    this *is* a breakout, the breakout bar's candle direction is derived
+    (``+1`` UP when ``close >= open`` else ``-1`` DOWN) and stored on the
+    result along with the open/close prices. When it is not a breakout, or
+    either price is missing, the three new fields stay ``None`` — the existing
+    fields are unaffected.
     """
     a = float(actual_range)
     p = float(predicted_range)
@@ -110,7 +124,19 @@ def check_breakout(
         severity = "moderate"
     else:
         severity = "none"
-    return BreakoutResult(is_breakout, a, p, ratio, threshold, severity)
+
+    breakout_direction: Optional[int] = None
+    co: Optional[float] = None
+    cc: Optional[float] = None
+    if is_breakout and candle_open is not None and candle_close is not None:
+        co = float(candle_open)
+        cc = float(candle_close)
+        breakout_direction = 1 if cc >= co else -1
+
+    return BreakoutResult(
+        is_breakout, a, p, ratio, threshold, severity,
+        breakout_direction=breakout_direction, candle_open=co, candle_close=cc,
+    )
 
 
 def compute_prediction_error(
@@ -280,9 +306,18 @@ def format_breakout_message(
         f"HAR predicted: ${result.predicted_range:.2f}",
         f"Actual range:  ${result.actual_range:.2f}",
         f"Ratio: {result.ratio:.2f}× expected",
+        *_direction_line(result),
         severity_line,
         f"Time: {timestamp}",
     ])
+
+
+def _direction_line(result: "BreakoutResult") -> List[str]:
+    """Phase 9A direction line — empty (no line) when direction is unknown."""
+    if result.breakout_direction is None:
+        return []
+    arrow = "⬆️ UP" if result.breakout_direction >= 1 else "⬇️ DOWN"
+    return [f"Direction: {arrow}"]
 
 
 def format_calibration_message(

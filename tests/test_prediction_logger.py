@@ -35,7 +35,9 @@ EXPECTED_COLUMNS = {
     "actual_range", "prediction_error", "abs_prediction_error",
     "breakout_flag", "fear_greed_value", "btc_dominance",
     "total_mcap_trillion", "mcap_change_24h", "dxy", "vix",
-    "btc_options_iv", "created_at",
+    "btc_options_iv", "breakout_direction", "breakout_candle_open",
+    "breakout_candle_close", "bias_correction", "corrected_predicted_range",
+    "created_at",
 }
 
 
@@ -72,7 +74,7 @@ class TestInitializeDb:
         initialize_db(db)
         cols = {r["name"] for r in query(db, "PRAGMA table_info(har_predictions)")}
         assert cols == EXPECTED_COLUMNS
-        assert len(cols) == 23  # exactly the spec'd schema, nothing extra
+        assert len(cols) == 28  # exactly the spec'd schema, nothing extra
 
     def test_initialize_db_is_idempotent(self, tmp_path):
         db = str(tmp_path / "alerts.db")
@@ -409,3 +411,55 @@ class TestIsolationAndRoundTrip:
         assert len(eth_hist) == 1
         assert eth_hist[0]["actual_range"] == pytest.approx(60.0)
         assert eth_hist[0]["prediction_error"] == pytest.approx(10.0)
+
+
+# ---------------------------------------------------------------------------
+# Phase 9A: breakout-direction columns written by log_prediction
+# ---------------------------------------------------------------------------
+
+class TestBreakoutDirectionLogging:
+    """log_prediction persists breakout_direction / candle open+close."""
+
+    def test_direction_written_on_breakout(self, tmp_path):
+        db = str(tmp_path / "p.db")
+        log_prediction(db, ts(0), "BTC/USDT", "1h", forecast(100.0),
+                       breakout_direction=1, candle_open=100.0, candle_close=110.0)
+        rows = query(db, 'SELECT breakout_direction FROM har_predictions '
+                         'WHERE "timestamp" = ?', (ts(0),))
+        assert rows[0]["breakout_direction"] == 1
+
+    def test_direction_null_on_non_breakout(self, tmp_path):
+        db = str(tmp_path / "p.db")
+        log_prediction(db, ts(0), "BTC/USDT", "1h", forecast(100.0))  # no dir
+        rows = query(db, 'SELECT breakout_direction, breakout_candle_open, '
+                         "breakout_candle_close FROM har_predictions "
+                         'WHERE "timestamp" = ?', (ts(0),))
+        assert rows[0]["breakout_direction"] is None
+        assert rows[0]["breakout_candle_open"] is None
+        assert rows[0]["breakout_candle_close"] is None
+
+    def test_candle_open_close_written_on_breakout(self, tmp_path):
+        db = str(tmp_path / "p.db")
+        log_prediction(db, ts(0), "BTC/USDT", "1h", forecast(100.0),
+                       breakout_direction=-1, candle_open=110.0, candle_close=100.0)
+        rows = query(db, 'SELECT breakout_candle_open, breakout_candle_close, '
+                         "breakout_direction FROM har_predictions "
+                         'WHERE "timestamp" = ?', (ts(0),))
+        assert rows[0]["breakout_candle_open"] == 110.0
+        assert rows[0]["breakout_candle_close"] == 100.0
+        assert rows[0]["breakout_direction"] == -1
+
+    def test_existing_rows_unaffected(self, tmp_path):
+        db = str(tmp_path / "p.db")
+        # A row logged the old way (no Phase 9A params) still round-trips.
+        log_prediction(db, ts(0), "BTC/USDT", "1h", forecast(100.0))
+        log_prediction(db, ts(1), "BTC/USDT", "1h", forecast(200.0),
+                       breakout_direction=1, candle_open=10.0, candle_close=11.0)
+        rows = query(db, 'SELECT "timestamp", har_predicted_range, '
+                         "breakout_direction FROM har_predictions ORDER BY "
+                         '"timestamp"')
+        by_ts = {r["timestamp"]: r for r in rows}
+        # Old row keeps its core fields; new row carries direction.
+        assert by_ts[ts(0)]["har_predicted_range"] == pytest.approx(100.0)
+        assert by_ts[ts(0)]["breakout_direction"] is None
+        assert by_ts[ts(1)]["breakout_direction"] == 1

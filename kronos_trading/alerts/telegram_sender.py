@@ -196,14 +196,25 @@ def send_forecast(
         if section:
             context_block = f"\n{section}"
 
+    def _bias_lines(f: HarForecast) -> str:
+        # Only shown when a non-zero bias correction was applied (skipped during
+        # early calibration when there is too little history for a correction).
+        bias = getattr(f, "bias_correction", 0.0) or 0.0
+        if bias == 0.0:
+            return ""
+        corrected = getattr(f, "corrected_predicted_range", f.predicted_range)
+        sign = "-" if bias < 0 else "+"
+        return (f"\n  Bias correction: {sign}${abs(bias):.2f}"
+                f"\n  Corrected range: ${corrected:.2f}")
+
     text = f"""🔮 HAR Volatility Forecast
 ━━━━━━━━━━━━━━━━━━━━
 BTC/USDT 1h
-  Predicted range: ${btc_forecast.predicted_range:.2f}
+  Predicted range: ${btc_forecast.predicted_range:.2f}{_bias_lines(btc_forecast)}
   Regime: {btc_forecast.regime or "N/A"}
 
 ETH/USDT 1h
-  Predicted range: ${eth_forecast.predicted_range:.2f}
+  Predicted range: ${eth_forecast.predicted_range:.2f}{_bias_lines(eth_forecast)}
   Regime: {eth_forecast.regime or "N/A"}{context_block}
 
 ⏰ {timestamp} UTC

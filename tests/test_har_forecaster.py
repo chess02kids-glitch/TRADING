@@ -21,8 +21,11 @@ from kronos_trading.alerts.har_forecaster import (
     ROLLING_WINDOWS,
     InsufficientCandlesError,
     HarForecast,
+    apply_bias_correction,
     candle_ranges,
     classify_regime,
+    compute_bias_correction,
+    last_completed_open_close,
     compute_har_features,
     compute_regime_thresholds,
     fetch_candles,
@@ -287,3 +290,92 @@ class TestRegime:
                                                     100.0 / 3.0))
         assert q_high == pytest.approx(np.percentile(ranges[-REGIME_WINDOW_BARS:],
                                                      200.0 / 3.0))
+
+
+# ---------------------------------------------------------------------------
+# Phase 9A: most-recent-completed-bar open/close extraction
+# ---------------------------------------------------------------------------
+
+class TestLastCompletedOpenClose:
+    """last_completed_open_close returns the most recent closed bar's OHLC."""
+
+    def test_extracts_last_bar_open_close(self):
+        candles = [
+            Candle(0, 100.0, 110.0, 95.0, 105.0, 1.0),
+            Candle(3_600_000, 105.0, 115.0, 100.0, 112.0, 1.0),
+        ]
+        assert last_completed_open_close(candles) == (105.0, 112.0)
+
+    def test_empty_returns_none_pair(self):
+        assert last_completed_open_close([]) == (None, None)
+
+    def test_single_bar_open_close(self):
+        candles = [Candle(0, 50.0, 55.0, 48.0, 52.0, 1.0)]
+        assert last_completed_open_close(candles) == (50.0, 52.0)
+
+
+# ---------------------------------------------------------------------------
+# Phase 9A: bias correction (additive, past-only)
+# ---------------------------------------------------------------------------
+
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+_BIAS_BASE = datetime(2024, 1, 10, tzinfo=timezone.utc)
+
+
+def _bias_history(n, error, start=None, step_hours=1, pending=0):
+    """n completed hourly rows with (actual - predicted) == error, plus `pending`
+    rows whose actual_range is None (must be excluded)."""
+    start = start or _BIAS_BASE
+    rows = []
+    for i in range(n):
+        ts = (start + timedelta(hours=i)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        predicted = 100.0
+        rows.append({"timestamp": ts, "har_predicted_range": predicted,
+                     "actual_range": predicted + error})
+    for j in range(pending):
+        ts = (start + timedelta(hours=n + j)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        rows.append({"timestamp": ts, "har_predicted_range": 100.0,
+                     "actual_range": None})
+    return rows
+
+
+class TestBiasCorrection:
+
+    def test_bias_zero_when_insufficient_history(self):
+        # 10 completed bars < 24 -> no correction
+        assert compute_bias_correction(_bias_history(10, 2.0)) == 0.0
+        assert compute_bias_correction([]) == 0.0
+
+    def test_bias_computed_from_past_only(self):
+        # 30 completed (error +3) + 15 pending (actual None) -> pending excluded
+        hist = _bias_history(30, 3.0, pending=15)
+        assert compute_bias_correction(hist) == pytest.approx(3.0)
+        # All-pending -> 0.0
+        assert compute_bias_correction(_bias_history(0, 2.0, pending=30)) == 0.0
+
+    def test_corrected_range_applies_bias(self):
+        f = HarForecast(predicted_range=100.0, coefficients=(1, 1, 1, 1), n_obs=50)
+        c = apply_bias_correction(f, 5.0)
+        # corrected = predicted + bias (bias>0 ⇒ HAR under-predicted ⇒ raise)
+        assert c.corrected_predicted_range == pytest.approx(105.0)
+        assert c.bias_correction == pytest.approx(5.0)
+        assert c.predicted_range == pytest.approx(100.0)  # original preserved
+
+    def test_bias_window_respects_7_days(self):
+        # 30 recent bars (error +2) + 30 bars 9 days older (error +100)
+        recent = _bias_history(30, 2.0, start=_BIAS_BASE)
+        old = _bias_history(30, 100.0,
+                            start=_BIAS_BASE - timedelta(days=9))
+        bias = compute_bias_correction(recent + old, window_days=7)
+        assert bias == pytest.approx(2.0)  # old bars excluded by the 7-day window
+
+    def test_negative_bias_handled_correctly(self):
+        # actual < predicted on average -> negative bias (over-prediction)
+        bias = compute_bias_correction(_bias_history(30, -2.0))
+        assert bias == pytest.approx(-2.0)
+        c = apply_bias_correction(
+            HarForecast(predicted_range=100.0, coefficients=(1, 1, 1, 1), n_obs=50),
+            bias)
+        # corrected = predicted + (-2) = 98 < predicted (over-prediction reduced)
+        assert c.corrected_predicted_range == pytest.approx(98.0)

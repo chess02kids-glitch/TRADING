@@ -377,3 +377,114 @@ def fetch_reports(table_name: str, limit: int = 10) -> pd.DataFrame:
         logger.error(f"Failed to fetch {table_name}: {e}")
         return pd.DataFrame()
 
+
+def fetch_phase9a_summary() -> dict:
+    """
+    Phase 9A breakout-direction tracking summary.
+
+    Reads from: public.phase9a_forward_returns
+    (written by kronos_trading.alerts.forward_return_logger).
+
+    Returns a dict with:
+        total_breakouts         int   distinct breakout events tracked
+        breakouts_tracked       int   (alias of total_breakouts)
+        forward_returns_filled  int   rows with a realised return
+        forward_returns_pending int   rows still waiting for the target bar
+        hit_rate_t1             float | None   (None if < 10 filled at t+1)
+        hit_rate_t2             float | None
+        up_breakouts            int   distinct breakouts closing up
+        down_breakouts          int   distinct breakouts closing down
+        status_message          str
+
+    Gracefully returns all zeros + "Table not yet created" if the table
+    does not exist yet (the bot has not logged any Phase 9A data).
+    """
+    zeros = {
+        "total_breakouts": 0,
+        "breakouts_tracked": 0,
+        "forward_returns_filled": 0,
+        "forward_returns_pending": 0,
+        "hit_rate_t1": None,
+        "hit_rate_t2": None,
+        "up_breakouts": 0,
+        "down_breakouts": 0,
+        "status_message": "Table not yet created",
+    }
+    try:
+        import psycopg
+        from psycopg.rows import dict_row
+
+        url = get_db_url()
+        if not url:
+            zeros["status_message"] = "SUPABASE_DB_URL not set"
+            return zeros
+
+        with psycopg.connect(url, row_factory=dict_row) as conn:
+            with conn.cursor() as cur:
+                # Does the table exist yet?
+                cur.execute(
+                    "SELECT to_regclass('public.phase9a_forward_returns') AS exists")
+                if cur.fetchone()["exists"] is None:
+                    return zeros
+
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS n,
+                           COUNT(*) FILTER (WHERE breakout_direction = 1) AS up,
+                           COUNT(*) FILTER (WHERE breakout_direction = -1) AS down
+                    FROM (
+                        SELECT DISTINCT breakout_timestamp, asset, breakout_direction
+                        FROM phase9a_forward_returns
+                    ) b
+                    """)
+                b = cur.fetchone()
+
+                cur.execute(
+                    """
+                    SELECT
+                      COUNT(*) FILTER (WHERE forward_return IS NOT NULL) AS filled,
+                      COUNT(*) FILTER (WHERE forward_return IS NULL) AS pending
+                    FROM phase9a_forward_returns
+                    """)
+                f = cur.fetchone()
+
+                cur.execute(
+                    """
+                    SELECT horizon, COUNT(*) AS n,
+                           AVG((forward_direction = breakout_direction)::int) AS hit_rate
+                    FROM phase9a_forward_returns
+                    WHERE forward_direction IS NOT NULL
+                    GROUP BY horizon
+                    """)
+                hits = {r["horizon"]: r for r in cur.fetchall()}
+
+        total = int(b["n"] or 0)
+
+        def _hr(horizon):
+            row = hits.get(horizon)
+            if row is None or (row["n"] or 0) < 10 or row["hit_rate"] is None:
+                return None
+            return float(row["hit_rate"])
+
+        if total >= 30:
+            status = "Enough data — ready for analysis"
+        else:
+            status = f"Collecting data ({total} of 30 needed)"
+
+        return {
+            "total_breakouts": total,
+            "breakouts_tracked": total,
+            "forward_returns_filled": int(f["filled"] or 0),
+            "forward_returns_pending": int(f["pending"] or 0),
+            "hit_rate_t1": _hr(1),
+            "hit_rate_t2": _hr(2),
+            "up_breakouts": int(b["up"] or 0),
+            "down_breakouts": int(b["down"] or 0),
+            "status_message": status,
+        }
+
+    except Exception as e:
+        logger.error(f"Phase 9A summary failed: {e}")
+        zeros["status_message"] = "Phase 9A data unavailable"
+        return zeros
+
