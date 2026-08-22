@@ -455,13 +455,17 @@ class TestFetchHelpers:
 # ---------------------------------------------------------------------------
 
 class TestMain:
-    def test_main_no_db_url_returns_1(self, monkeypatch):
+    @patch("kronos_trading.alerts.telegram_sender.load_dotenv")
+    @patch(f"{MOD}.load_dotenv")
+    def test_main_no_db_url_returns_1(self, mock_load_dotenv_1, mock_load_dotenv_2, monkeypatch):
         monkeypatch.delenv("SUPABASE_DB_URL", raising=False)
         monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "token")
         monkeypatch.setenv("TELEGRAM_CHAT_ID", "chat")
         assert qr.main() == 1
 
-    def test_main_no_telegram_returns_1(self, monkeypatch):
+    @patch("kronos_trading.alerts.telegram_sender.load_dotenv")
+    @patch(f"{MOD}.load_dotenv")
+    def test_main_no_telegram_returns_1(self, mock_load_dotenv_1, mock_load_dotenv_2, monkeypatch):
         monkeypatch.setenv("SUPABASE_DB_URL", "postgresql://x")
         monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
         monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
