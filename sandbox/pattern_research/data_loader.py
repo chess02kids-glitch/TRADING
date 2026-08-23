@@ -10,9 +10,18 @@ The fetch logic mirrors ``kronos_trading/alerts/har_forecaster.py``:
 * duplicate timestamps deduplicated (last occurrence wins),
 * candles returned sorted ascending by timestamp.
 
-The only addition here is **pagination**: har_forecaster needs 800 bars (one
-request), the sandbox needs 730 days x 24 = 17,520 hourly bars, so the loader
-walks forward with ``since`` until it reaches now.
+**Timeframes:** :func:`fetch_ohlcv` supports ``1h``, ``4h`` and ``1d`` bars
+(:data:`SUPPORTED_TIMEFRAMES`). The bar length of the chosen timeframe drives
+BOTH the pagination step and the "is this bar closed yet?" rule
+(``open_time + bar_len <= now``), exactly like ``har_forecaster``. Each
+timeframe gets its own cache file (``BTCUSDT_1h_730d.csv`` vs
+``BTCUSDT_4h_730d.csv`` vs ``BTCUSDT_1d_730d.csv``), and
+:func:`infer_timeframe` can recover the timeframe from a DataFrame's bar
+spacing — used to warn when a ``--csv`` file contradicts ``--timeframe``.
+
+The only addition here versus har_forecaster is **pagination**: har_forecaster
+needs 800 bars (one request), the sandbox needs 730 days x 24 = 17,520 hourly
+bars, so the loader walks forward with ``since`` until it reaches now.
 
 Everything is returned as a ``pandas.DataFrame`` (the "candles" object used by
 every pattern module) with:
@@ -39,6 +48,10 @@ DEFAULT_TIMEFRAME = "1h"
 DEFAULT_DAYS = 730
 DEFAULT_ASSETS = ("BTC/USDT", "ETH/USDT")
 OHLCV_COLUMNS = ["open", "high", "low", "close", "volume"]
+
+# Timeframes this sandbox supports for research runs. The bar length drives
+# BOTH the pagination step and the "is this bar closed yet?" rule.
+SUPPORTED_TIMEFRAMES = ("1h", "4h", "1d")
 
 # Timeframe -> bar length in ms (mirrors har_forecaster.TIMEFRAME_MS).
 TIMEFRAME_MS = {
@@ -159,9 +172,9 @@ def fetch_ohlcv(
         InsufficientCandlesError: fewer than :data:`MIN_CANDLES` closed candles.
     """
     symbol = _normalize_symbol(asset)
-    if timeframe not in TIMEFRAME_MS:
+    if timeframe not in SUPPORTED_TIMEFRAMES:
         raise ValueError(f"Unsupported timeframe {timeframe!r}; "
-                         f"allowed: {sorted(TIMEFRAME_MS)}")
+                         f"allowed: {list(SUPPORTED_TIMEFRAMES)}")
     if days < 1:
         raise ValueError(f"days must be >= 1, got {days}")
     if exchange is None:
@@ -207,10 +220,55 @@ def fetch_ohlcv(
     return df
 
 
-def cache_path(asset: str, timeframe: str, days: int, cache_dir: str = CACHE_DIR) -> str:
-    """Deterministic cache filename for one (asset, timeframe, days) dataset."""
+def fetch_candles(
+    asset: str,
+    timeframe: str = DEFAULT_TIMEFRAME,
+    days: int = DEFAULT_DAYS,
+    **kwargs,
+) -> pd.DataFrame:
+    """Alias for :func:`fetch_ohlcv` (the original brief's function name).
+
+    Accepts the same keyword arguments (``exchange``, ``now_ms``, ``limit``,
+    ``max_requests``) and forwards them unchanged.
+    """
+    return fetch_ohlcv(asset, timeframe=timeframe, days=days, **kwargs)
+
+
+def cache_path(asset: str, timeframe: str = DEFAULT_TIMEFRAME,
+               days: int = DEFAULT_DAYS, cache_dir: str = CACHE_DIR) -> str:
+    """Deterministic cache filename for one (asset, timeframe, days) dataset.
+
+    The timeframe is part of the filename (``BTCUSDT_1h_730d.csv``,
+    ``BTCUSDT_4h_730d.csv``, ``BTCUSDT_1d_730d.csv``) so two timeframes of the
+    same asset can never share a cache file.
+    """
     slug = _normalize_symbol(asset).replace("/", "")
     return os.path.join(cache_dir, f"{slug}_{timeframe}_{days}d.csv")
+
+
+def infer_timeframe(candles: pd.DataFrame) -> Optional[str]:
+    """Infer the bar timeframe from the median spacing between bars.
+
+    Returns ``"1h"``, ``"4h"`` or ``"1d"`` when the median spacing matches one
+    of :data:`SUPPORTED_TIMEFRAMES` within a 1% tolerance, and ``None`` when
+    there are fewer than 3 bars or the spacing matches nothing (e.g. 15m bars
+    or irregular data). Used to sanity-check that ``--csv`` data really has the
+    spacing the ``--timeframe`` flag claims.
+    """
+    if candles is None or len(candles) < 3:
+        return None
+    idx = pd.DatetimeIndex(candles.index)
+    if len(idx) < 3:
+        return None
+    deltas = idx.to_series().diff().dropna()
+    if deltas.empty:
+        return None
+    median_ms = float(deltas.dt.total_seconds().median() * 1000.0)
+    for tf in SUPPORTED_TIMEFRAMES:
+        target = float(TIMEFRAME_MS[tf])
+        if abs(median_ms - target) / target <= 0.01:
+            return tf
+    return None
 
 
 def save_csv(candles: pd.DataFrame, path: str) -> str:

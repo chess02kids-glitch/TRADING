@@ -9,7 +9,7 @@ main ``kronos_trading`` system:
 
 Sub-modules:
 
-* :mod:`sandbox.pattern_research.data_loader` — 1h OHLCV loading (KuCoin
+* :mod:`sandbox.pattern_research.data_loader` — 1h/4h/1d OHLCV loading (KuCoin
   public API, 730 days, disk cache, offline CSV support).
 * :mod:`sandbox.pattern_research.patterns` — the four pattern families
   (momentum, candlestick, time-of-day, volume spike).

@@ -10,6 +10,7 @@ from sandbox.pattern_research.patterns.momentum import (
     detect_higher_high_higher_low,
     detect_lower_low_lower_high,
     detect_momentum_combined,
+    detect_momentum_fade_combined,
 )
 from .conftest import make_candles
 
@@ -73,6 +74,61 @@ def test_mutating_future_bars_cannot_change_past_signals(synthetic_candles):
     tampered.iloc[2000:] *= 1.5
     base = detect_momentum_combined(synthetic_candles).iloc[:2000]
     assert list(detect_momentum_combined(tampered).iloc[:2000].values) == list(base.values)
+
+
+# --- fade (mean-reversion) reading ------------------------------------------
+def test_momentum_fade_is_inverse_of_momentum(synthetic_candles):
+    """The fade series is the exact negation, on the same bars, with the same
+    no-look-ahead guarantees (inherited, not reimplemented)."""
+    momentum = detect_momentum_combined(synthetic_candles)
+    fade = detect_momentum_fade_combined(synthetic_candles)
+
+    assert fade.name == "momentum_fade"
+    assert fade.index.equals(momentum.index)
+    assert list(fade.values) == [-v for v in momentum.values]
+    assert set(np.unique(fade.values)) <= {-1, 0, 1}
+    # same support: exactly the same bars fire
+    assert list((fade != 0).values) == list((momentum != 0).values)
+    # HH/HL bars are sold, LL/LH bars are bought
+    assert (fade[momentum == 1] == -1).all()
+    assert (fade[momentum == -1] == 1).all()
+
+    # no new look-ahead: truncating the future leaves earlier values identical
+    cut = 1500
+    partial = detect_momentum_fade_combined(synthetic_candles.iloc[:cut])
+    assert list(partial.values) == list(fade.iloc[:cut].values)
+
+    # mutating bars from 2000 onward cannot change the first 2000 signals
+    tampered = synthetic_candles.copy()
+    tampered.iloc[2000:] *= 1.5
+    again = detect_momentum_fade_combined(tampered)
+    assert list(again.iloc[:2000].values) == list(fade.iloc[:2000].values)
+
+
+def test_momentum_fade_hit_rate_is_the_complement(synthetic_candles):
+    """Same events as momentum; 'correct' flips except on flat forward moves,
+    which both readings score 0 (a flat move is 'wrong' for ±1 either way)."""
+    momentum = detect_momentum_combined(synthetic_candles)
+    fade = detect_momentum_fade_combined(synthetic_candles)
+    m = compute_forward_return(synthetic_candles, momentum, horizon=1)
+    f = compute_forward_return(synthetic_candles, fade, horizon=1)
+
+    assert list(m.index) == list(f.index)            # identical event sets
+    flat = m["forward_return"] == 0.0
+    assert (m.loc[flat, "correct"] == 0).all() and (f.loc[flat, "correct"] == 0).all()
+    nonflat = ~flat
+    assert (f.loc[nonflat, "correct"].to_numpy()
+            == 1 - m.loc[nonflat, "correct"].to_numpy()).all()
+    # hence hit_fade + hit_continuation = fraction of non-flat events (~1.0
+    # on this data, where exactly-zero forward returns never occur)
+    assert f["correct"].mean() + m["correct"].mean() == pytest.approx(1.0 - flat.mean())
+
+
+def test_fade_on_a_staircase_sells_the_uptrend():
+    assert list(detect_momentum_fade_combined(_staircase_up(8)).values) == \
+        [0, 0, 0, 0, -1, -1, -1, -1]
+    assert list(detect_momentum_fade_combined(_staircase_down(8)).values) == \
+        [0, 0, 0, 0, 1, 1, 1, 1]
 
 
 def test_lookback_validation():
