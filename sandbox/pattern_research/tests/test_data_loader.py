@@ -1,6 +1,7 @@
 """Data-loader tests — fake CCXT exchange, no network."""
 from __future__ import annotations
 
+import glob
 import os
 
 import pandas as pd
@@ -102,6 +103,89 @@ def test_load_csv_rejects_missing_columns(tmp_path):
     pd.DataFrame({"timestamp": ["2024-01-01T00:00:00Z"], "close": [1.0]}).to_csv(path, index=False)
     with pytest.raises(ValueError):
         data_loader.load_csv(path)
+
+
+# --- 1h / 4h / 1d timeframe support -----------------------------------------
+@pytest.mark.parametrize("timeframe,bar_ms", [
+    ("1h", 3_600_000),
+    ("4h", 14_400_000),
+    ("1d", 86_400_000),
+])
+def test_fetch_supports_1h_4h_and_1d(timeframe, bar_ms):
+    start = NOW - 200 * bar_ms
+    # last row opens exactly at NOW -> still forming -> must be dropped
+    ex = FakeExchange(start, 201, bar_ms=bar_ms)
+    days = 200 * bar_ms // 86_400_000 + 1  # cover all 200 bars regardless of tf
+    df = data_loader.fetch_ohlcv("BTC/USDT", timeframe=timeframe, days=days,
+                                 exchange=ex, now_ms=NOW, limit=50)
+    assert len(df) == 200
+    assert all(c[1] == timeframe for c in ex.calls)   # timeframe passed to exchange
+    assert ex.calls[0][0] == "BTC/USDT"
+    assert df.index[-1] == pd.to_datetime(NOW - bar_ms, unit="ms", utc=True)
+    spacings = df.index.to_series().diff().dropna().unique()
+    assert len(spacings) == 1                          # uniform bar spacing
+    assert spacings[0] == pd.Timedelta(milliseconds=bar_ms)
+
+
+def test_cache_filename_includes_the_timeframe(tmp_path):
+    cache_dir = str(tmp_path)
+    for tf in data_loader.SUPPORTED_TIMEFRAMES:
+        expected = os.path.join(cache_dir, f"BTCUSDT_{tf}_730d.csv")
+        assert data_loader.cache_path("BTC/USDT", tf, 730, cache_dir) == expected
+    # defaults keep the original 1h / 730d naming
+    assert data_loader.cache_path("BTC/USDT", cache_dir=cache_dir).endswith(
+        "BTCUSDT_1h_730d.csv")
+
+
+def test_4h_and_1d_caches_do_not_collide(tmp_path):
+    cache_dir = str(tmp_path / "cache")
+    four_ms, day_ms = 14_400_000, 86_400_000
+    ex4 = FakeExchange(NOW - 300 * four_ms, 300, bar_ms=four_ms)
+    ex1 = FakeExchange(NOW - 300 * day_ms, 300, bar_ms=day_ms)
+    four = data_loader.load_candles("BTC/USDT", timeframe="4h", days=50,
+                                    exchange=ex4, now_ms=NOW, cache_dir=cache_dir)
+    daily = data_loader.load_candles("BTC/USDT", timeframe="1d", days=400,
+                                     exchange=ex1, now_ms=NOW, cache_dir=cache_dir)
+    files = sorted(os.path.basename(p)
+                   for p in glob.glob(os.path.join(cache_dir, "*.csv")))
+    assert files == ["BTCUSDT_1d_400d.csv", "BTCUSDT_4h_50d.csv"]
+    # reload from cache round-trips each timeframe's own data
+    again4 = data_loader.load_candles("BTC/USDT", timeframe="4h", days=50,
+                                      exchange=ex4, now_ms=NOW, cache_dir=cache_dir)
+    again1 = data_loader.load_candles("BTC/USDT", timeframe="1d", days=400,
+                                      exchange=ex1, now_ms=NOW, cache_dir=cache_dir)
+    pd.testing.assert_frame_equal(four, again4)
+    pd.testing.assert_frame_equal(daily, again1)
+
+
+def test_fetch_candles_alias_matches_fetch_ohlcv():
+    for tf, bar_ms in (("1h", 3_600_000), ("4h", 14_400_000)):
+        start = NOW - 100 * bar_ms
+        a = data_loader.fetch_ohlcv("BTC/USDT", timeframe=tf, days=30,
+                                    exchange=FakeExchange(start, 100, bar_ms=bar_ms),
+                                    now_ms=NOW)
+        b = data_loader.fetch_candles("BTC/USDT", timeframe=tf, days=30,
+                                      exchange=FakeExchange(start, 100, bar_ms=bar_ms),
+                                      now_ms=NOW)
+        pd.testing.assert_frame_equal(a, b)
+
+
+def test_infer_timeframe_from_bar_spacing():
+    def frame(freq, n=48):
+        idx = pd.date_range(start="2024-01-01T00:00:00Z", periods=n, freq=freq,
+                            tz="UTC", name="timestamp")
+        return pd.DataFrame({c: 1.0 for c in data_loader.OHLCV_COLUMNS}, index=idx)
+
+    assert data_loader.infer_timeframe(frame("1h")) == "1h"
+    assert data_loader.infer_timeframe(frame("4h")) == "4h"
+    assert data_loader.infer_timeframe(frame("1D")) == "1d"
+    assert data_loader.infer_timeframe(frame("15min")) is None   # unsupported spacing
+    assert data_loader.infer_timeframe(frame("1h", n=2)) is None  # fewer than 3 bars
+    assert data_loader.infer_timeframe(frame("1h", n=0)) is None
+    # 1% tolerance: an occasional doubled gap must not change the median verdict
+    jittered = frame("1h", n=100)
+    jittered = jittered.drop(index=jittered.index[50]).drop(index=jittered.index[70])
+    assert data_loader.infer_timeframe(jittered) == "1h"
 
 
 def test_sandbox_imports_no_production_or_db_modules():

@@ -1,7 +1,7 @@
 # Agent 1 — Pattern Research Sandbox
 
 A **completely separate** research playground for testing simple, public trading
-patterns on 1h crypto data.
+patterns on crypto data (1h / 4h / 1d bars).
 
 * No database. No Supabase. No secrets. No `.env`.
 * Data source: **CCXT KuCoin public API** only (same client + sanitising rules as
@@ -13,9 +13,9 @@ patterns on 1h crypto data.
 
 ```
 sandbox/pattern_research/
-├── data_loader.py            # KuCoin public fetch (730d, 1h), CSV cache, offline CSV mode
+├── data_loader.py            # KuCoin public fetch (730d, 1h/4h/1d), CSV cache, offline CSV mode
 ├── patterns/
-│   ├── momentum.py           # Phase 9B — HH/HL, LL/LH, compute_forward_return
+│   ├── momentum.py           # Phase 9B — HH/HL, LL/LH, fade inverse, compute_forward_return
 │   ├── candlestick.py        # Phase 9C — engulfing, doji, hammer
 │   ├── time_of_day.py        # Phase 9D — hourly / daily bias, find_best_hours
 │   └── volume_spike.py       # Phase 9E — volume ratio + spike direction
@@ -24,7 +24,7 @@ sandbox/pattern_research/
 ├── tools/make_synthetic_candles.py  # offline smoke-test data (NOT research data)
 ├── results/                  # generated reports
 ├── cache/                    # fetched OHLCV CSVs (git-ignored)
-└── tests/                    # 75 unit tests, fully offline
+└── tests/                    # 92 unit tests, fully offline
 ```
 
 ---
@@ -42,12 +42,17 @@ python -m sandbox.pattern_research.run_pattern_research \
 # one family, one asset, longer horizon
 python -m sandbox.pattern_research.run_pattern_research \
     --pattern candlestick --asset BTC/USDT --horizon 3
+
+# fade (mean-reversion) reading of Pattern 1 — deliberately NOT in "all"
+python -m sandbox.pattern_research.run_pattern_research \
+    --pattern momentum_fade --asset both --horizon 1 --timeframe 4h
 ```
 
-CLI flags: `--pattern {momentum,candlestick,time,volume,all}`,
-`--asset {BTC/USDT,ETH/USDT,both}`, `--horizon {1,2,3}`, `--output DIR`,
-plus `--days` (default 730), `--timeframe` (default `1h`), `--cache-dir`,
-`--no-cache`, `--min-win-rate`, `--splits`, `--quiet`, and
+CLI flags: `--pattern {momentum,momentum_fade,candlestick,time,volume,all}`,
+`--asset {BTC/USDT,ETH/USDT,both}`, `--horizon {1,2,3}`,
+`--timeframe {1h,4h,1d}` (default `1h`), `--output DIR`,
+plus `--days` (default 730), `--cache-dir`, `--no-cache`, `--min-win-rate`,
+`--splits`, `--quiet`, and
 `--csv "BTC/USDT=a.csv,ETH/USDT=b.csv"` for fully offline runs.
 
 The first live run fetches ~17,520 hourly bars per asset (paginated, rate-limited)
@@ -56,8 +61,34 @@ and caches them in `cache/`; later runs are instant and hit no API.
 Tests:
 
 ```bash
-pytest sandbox/pattern_research/tests -q     # 75 passed, no network needed
+pytest sandbox/pattern_research/tests -q     # 92 passed, no network needed
 ```
+
+---
+
+## Timeframes
+
+The loader and runner support **1h, 4h and 1d bars** (`--timeframe`). Things
+worth knowing before comparing runs across timeframes:
+
+* **Cache naming** — the timeframe is part of the cache filename
+  (`BTCUSDT_1h_730d.csv`, `BTCUSDT_4h_730d.csv`, `BTCUSDT_1d_730d.csv`), so
+  two timeframes of the same asset never share a cache file.
+* **Horizons are counted in bars, not clock time** — `--timeframe 4h
+  --horizon 1` means *4 hours forward* and `--timeframe 1d --horizon 1` means
+  *1 day forward*. The report's `_Horizon:_` line spells this out
+  (`t+2 = 8 hours forward`).
+* **Fewer bars on 4h/1d** — the same 730-day window holds ~6× fewer 4h bars
+  and ~24× fewer 1d bars than 1h bars. Rare patterns (hammer, engulfing,
+  time-of-day selections) can therefore fall under the 50-occurrence floor and
+  get **SKIPPED instead of tested** (rule 6/7). A skip on 4h/1d is a sample-size
+  statement, not a verdict.
+* **CSV spacing warning** — a `--csv` file can be saved at a different bar
+  spacing than `--timeframe` claims (a live fetch cannot). The runner detects
+  this via `infer_timeframe` (median bar spacing, 1% tolerance), logs a
+  warning, and prints a `> **Warning:**` block in the report saying horizons
+  are counted in **bars of the loaded data**. The synthetic-data tool gained a
+  `--freq` flag so genuine 4h/1d bars can be generated offline.
 
 ---
 
@@ -102,11 +133,36 @@ enter a feature.
 | `detect_higher_high_higher_low(candles, lookback=3)` | last 3 highs each > previous **and** last 3 lows each > previous | `+1` / `0` |
 | `detect_lower_low_lower_high(candles, lookback=3)` | last 3 lows each < previous **and** last 3 highs each < previous | `-1` / `0` |
 | `detect_momentum_combined(candles, lookback=3)` | union of the two (mutually exclusive) | `+1/-1/0` |
+| `detect_momentum_fade_combined(candles, lookback=3)` | exact inverse of the combined signal (fade / mean-reversion reading) | `-1/+1/0` |
 | `compute_forward_return(candles, signal_series, horizon=1)` | joins signals to realised returns | DataFrame `signal, forward_return, correct` |
 
 `correct = 1` when `sign(forward_return) == sign(signal)`, else `0`. Rows where the
 exit bar falls outside the sample are dropped; `signal == 0` rows are excluded by
 default (`include_flat=True` keeps them).
+
+### Fade (mean-reversion) reading
+
+`detect_momentum_fade_combined` is implemented as the literal negation of
+`detect_momentum_combined`, so it inherits the `.shift(1)` timing and the
+no-look-ahead guarantees unchanged: HH/HL → `-1` (sell the bullish structure),
+LL/LH → `+1` (buy the bearish structure). It runs through the **same**
+`evaluate_signal` path — same `compute_forward_return`, same DM test, same
+G1–G6 gates, same walk-forward — and is invoked explicitly with
+`--pattern momentum_fade`. It is deliberately **not** part of `--pattern all`:
+it scores the *same events* as `momentum: combined` with flipped signs, so
+bundling the two would let one experiment read as two independent findings.
+
+Two honesty caveats, stated in the docstring and enforced by the tests:
+
+1. **A sub-50% continuation hit rate is NOT evidence of a tradable fade
+   edge.** The fade hit rate is essentially the complement of the continuation
+   hit rate (they sum to ~1.0 on the same events), so "momentum continues only
+   49% of the time" does not imply "fading wins 51% of the time" in any
+   tradable sense.
+2. **The inverse must clear G1–G6 and the DM test on its own.** On synthetic
+   random-walk data the fade reading lands near 50% with p > 0.05 and is
+   reported `CLOSED` (see `results/SMOKE_TEST_SYNTHETIC_momentum_fade_1h.md`) —
+   which is the expected outcome, not a failure of the experiment.
 
 ### Pattern 2 — Candlestick (`patterns/candlestick.py`)
 
@@ -185,21 +241,27 @@ fails anyway.
 
 ## Honest reporting
 
-The runner writes `results/pattern_research_<pattern>_<asset>_h<horizon>_<utc>.md`
-containing: data coverage, the method/no-look-ahead statement, the descriptive
+The runner writes `results/pattern_research_<pattern>_<asset>_<tf>_h<horizon>_<utc>.md`
+(where `<tf>` is the timeframe, e.g. `1h`/`4h`/`1d`) containing: data coverage
+(including a per-asset detected "Bar spacing" column), the timeframe/horizon
+wording, the method/no-look-ahead statement, the descriptive
 hourly and day-of-week bias tables, a Phase 9A-style results box per signal
 (hit rates, mean forward return, DM stat, p-value, temporal thirds, G1–G6,
 verdict), the per-asset walk-forward table, and a summary table listing **every**
 signal including failures and skips. When nothing passes, the report says so
 explicitly — negative results are results (rule 5).
 
-### Status of the checked-in report
+### Status of the checked-in reports
 
 `results/SMOKE_TEST_SYNTHETIC_DATA.md` is a **pipeline smoke test on seeded
 synthetic random-walk data**, not a research result. It exists because the
 environment this sandbox was built in has no network egress to `api.kucoin.com`
 (TLS connections are refused), so no live BTC/ETH data could be downloaded here.
-As expected, random data produces `CLOSED` for every pattern.
+As expected, random data produces `CLOSED` for every pattern. Two siblings exist
+for the same purpose: `SMOKE_TEST_SYNTHETIC_momentum_fade_1h.md` (the fade
+reading on 1h synthetic bars — near 50%, p > 0.05, `CLOSED`) and
+`SMOKE_TEST_SYNTHETIC_all_4h.md` (all families on genuine 4h synthetic bars via
+`--freq 4h`, demonstrating the fewer-bars → SKIPPED behaviour).
 
 To produce real results, run the CLI on a machine with public internet access:
 

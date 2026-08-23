@@ -1,13 +1,19 @@
 """Pattern research runner (Agent 1 sandbox CLI).
 
 Runs the full validation pipeline for one or all pattern families on KuCoin
-1h data and writes an honest markdown report — including patterns that fail,
-and patterns that are skipped for having fewer than 50 occurrences.
+data (``1h``/``4h``/``1d`` bars — see ``--timeframe``) and writes an honest
+markdown report — including patterns that fail, and patterns that are skipped
+for having fewer than 50 occurrences.
 
 Usage::
 
     python -m sandbox.pattern_research.run_pattern_research \\
-        --pattern all --asset both --horizon 1 --output sandbox/pattern_research/results
+        --pattern all --asset both --horizon 1 --timeframe 1h \\
+        --output sandbox/pattern_research/results
+
+    # fade (mean-reversion) reading of Pattern 1 — deliberately NOT in "all"
+    python -m sandbox.pattern_research.run_pattern_research \\
+        --pattern momentum_fade --asset both --horizon 1 --timeframe 4h
 
     # fully offline (no exchange egress): point at saved CSVs
     python -m sandbox.pattern_research.run_pattern_research --pattern momentum \\
@@ -40,7 +46,7 @@ except ImportError:  # ...and `python run_pattern_research.py` from this folder
 
 logger = logging.getLogger(__name__)
 
-PATTERN_CHOICES = ["momentum", "candlestick", "time", "volume", "all"]
+PATTERN_CHOICES = ["momentum", "momentum_fade", "candlestick", "time", "volume", "all"]
 ASSET_CHOICES = ["BTC/USDT", "ETH/USDT", "both"]
 DEFAULT_OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 
@@ -58,6 +64,18 @@ def _static_signals(pattern: str) -> List[Tuple[str, str, SignalFunc]]:
             ("momentum", "lower_low_lower_high (-1)", momentum.detect_lower_low_lower_high),
             ("momentum", "combined HH/HL + LL/LH", momentum.detect_momentum_combined),
         ],
+        # Fade (mean-reversion) reading of the combined momentum signal.
+        # Deliberately NOT part of "all": it scores the *same events* as
+        # "momentum: combined" (with flipped signs), so bundling the two into
+        # one report would let a single experiment read as two independent
+        # findings. It runs through the exact same evaluate_signal path —
+        # same compute_forward_return, same DM test, same G1-G6 gates, same
+        # walk-forward — but only when explicitly requested via
+        # --pattern momentum_fade.
+        "momentum_fade": [
+            ("momentum_fade", "combined fade (inverse of momentum)",
+             momentum.detect_momentum_fade_combined),
+        ],
         "candlestick": [
             ("candlestick", "bullish_engulfing (+1)", candlestick.detect_bullish_engulfing),
             ("candlestick", "bearish_engulfing (-1)", candlestick.detect_bearish_engulfing),
@@ -74,6 +92,31 @@ def _static_signals(pattern: str) -> List[Tuple[str, str, SignalFunc]]:
             out.extend(catalogue[key])
         return out
     return catalogue.get(pattern, [])
+
+
+# ---------------------------------------------------------------------------
+# horizon wording
+# ---------------------------------------------------------------------------
+
+# Singular/plural wording for the horizon label of each timeframe. A horizon
+# is ALWAYS counted in bars; these strings translate bars -> clock time.
+_HORIZON_UNIT = {"1h": "hour", "4h": "hour", "1d": "day"}
+_HORIZON_BARS_PER_UNIT = {"1h": 1, "4h": 4, "1d": 1}
+
+
+def horizon_label(horizon: int, timeframe: str) -> str:
+    """Human wording for a horizon, e.g. ``"t+1 = 4 hours forward"``.
+
+    A horizon is always counted in **bars** of the selected timeframe:
+    4h bars with horizon 1 = 4 hours forward; 1d bars with horizon 1 = one day
+    forward. Unknown timeframes fall back to neutral bar wording.
+    """
+    n = int(horizon)
+    if timeframe in _HORIZON_UNIT:
+        amount = n * _HORIZON_BARS_PER_UNIT[timeframe]
+        unit = _HORIZON_UNIT[timeframe]
+        return f"t+{n} = {amount} {unit}{'s' if amount != 1 else ''} forward"
+    return f"t+{n} = {n} bar{'s' if n != 1 else ''} forward"
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +252,7 @@ def _pct(x) -> str:
 
 def format_box(title: str, evaluation: Dict[str, object], horizon: int) -> str:
     """Phase 9A-style fixed-width results box for one signal."""
-    W = 44
+    W = 58  # wide enough for the longest signal title, e.g. the fade reading
 
     def row(content: str = "") -> str:
         content = content[:W]
@@ -287,6 +330,7 @@ def build_report(
     data_summary: Dict[str, object],
     time_context: Optional[Dict[str, object]] = None,
     source: str = "CCXT KuCoin public API (spot)",
+    timeframe: str = "1h",
 ) -> str:
     """Assemble the full markdown report (honest: failures included)."""
     now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -294,25 +338,45 @@ def build_report(
     md.append(f"# Pattern Research Results — {pattern}")
     md.append("")
     md.append(f"_Generated:_ {now}  ")
-    md.append(f"_Source:_ {source}, 1h OHLCV, last {days} days  ")
+    md.append(f"_Source:_ {source}, {timeframe} OHLCV, last {days} days  ")
     md.append(f"_Assets:_ {asset_label}  ")
-    md.append(f"_Horizon:_ t+{horizon}  ")
+    md.append(f"_Timeframe:_ {timeframe}  ")
+    md.append(f"_Horizon:_ {horizon_label(horizon, timeframe)}  ")
     md.append("_Sandbox:_ `sandbox/pattern_research` — no DB, no secrets, "
               "no contact with the production system.")
     md.append("")
     md.append("## Data")
     md.append("")
-    md.append("| Asset | Bars | First bar (UTC) | Last bar (UTC) |")
-    md.append("|---|---|---|---|")
+    md.append("| Asset | Bars | Bar spacing | First bar (UTC) | Last bar (UTC) |")
+    md.append("|---|---|---|---|---|")
     for asset, info in data_summary.items():
-        md.append(f"| {asset} | {info['n']} | {info['start']} | {info['end']} |")
+        spacing = info.get("spacing") or "unknown"
+        md.append(f"| {asset} | {info['n']} | {spacing} | {info['start']} | {info['end']} |")
     md.append("")
+
+    # A --csv file can be saved at a different bar spacing than --timeframe
+    # claims; that is possible only in the offline path (a live fetch always
+    # requests the flag's timeframe), so warn loudly when detected.
+    mismatched = sorted(
+        asset for asset, info in data_summary.items()
+        if info.get("spacing") not in (None, timeframe))
+    if mismatched:
+        detail = ", ".join(
+            f"{a}: {data_summary[a]['spacing']}" for a in mismatched)
+        md.append(f"> **Warning:** the loaded data's bar spacing ({detail}) "
+                  f"contradicts `--timeframe {timeframe}`. This is possible "
+                  "with `--csv`; all horizons below are counted in **bars of "
+                  "the loaded data**, and the clock-time wording in the "
+                  "horizon label follows the flag, not the file. Re-export "
+                  "the CSV at the right spacing or fix `--timeframe`.")
+        md.append("")
     md.append("## Method")
     md.append("")
     md.append("* Every detector is `.shift(1)`-ed: `signal[t]` reflects a pattern that "
               "**completed at bar t-1**, so it is known before bar `t` opens.")
     md.append(f"* `forward_return[t] = close[t+{horizon}]/close[t] - 1` — entry at the "
-              "close of the signal bar, exit `horizon` bars later. No look-ahead.")
+              "close of the signal bar, exit `horizon` bars later. No look-ahead. "
+              "**A horizon is always counted in bars** of the selected timeframe.")
     md.append("* `correct = 1` when `sign(forward_return) == sign(signal)`.")
     md.append("* Diebold-Mariano: one-sided vs a 50/50 coin flip, Newey-West HAC with "
               "3 lags (identical arithmetic to Phase 9A `dm_test.py`).")
@@ -395,8 +459,8 @@ def build_report(
     else:
         md.append("**No signal cleared all six gates.** Every pattern tested above is "
                   "reported as CLOSED. This is the expected outcome for simple public "
-                  "patterns on liquid 1h crypto data and is documented here rather than "
-                  "buried — negative results are results.")
+                  f"patterns on liquid {timeframe} crypto data and is documented here "
+                  "rather than buried — negative results are results.")
     md.append("")
     return "\n".join(md)
 
@@ -433,7 +497,8 @@ def load_assets(assets: List[str], timeframe: str, days: int, csv_map: Dict[str,
 def run(pattern: str, assets: List[str], horizon: int, candles_by_asset: Dict[str, pd.DataFrame],
         days: int, min_win_rate: float = time_of_day.DEFAULT_MIN_WIN_RATE,
         n_splits: int = 3,
-        source: str = "CCXT KuCoin public API (spot)"
+        source: str = "CCXT KuCoin public API (spot)",
+        timeframe: str = "1h",
         ) -> Tuple[str, List[Tuple[str, Dict[str, object]]]]:
     """Core (testable) run: returns ``(markdown_report, evaluations)``."""
     evaluations: List[Tuple[str, Dict[str, object]]] = []
@@ -452,12 +517,21 @@ def run(pattern: str, assets: List[str], horizon: int, candles_by_asset: Dict[st
     data_summary = {
         asset: {"n": int(len(c)),
                 "start": str(c.index[0]) if len(c) else "—",
-                "end": str(c.index[-1]) if len(c) else "—"}
+                "end": str(c.index[-1]) if len(c) else "—",
+                "spacing": data_loader.infer_timeframe(c)}
         for asset, c in candles_by_asset.items()
     }
+    for asset, info in data_summary.items():
+        spacing = info["spacing"]
+        if spacing is not None and spacing != timeframe:
+            logger.warning(
+                "%s: loaded data's bar spacing looks like %s but --timeframe %s "
+                "was requested (possible with --csv); horizons are counted in "
+                "bars of the loaded data", asset, spacing, timeframe)
     asset_label = "both (BTC/USDT + ETH/USDT)" if len(assets) > 1 else assets[0]
     report = build_report(pattern, asset_label, horizon, days, evaluations,
-                          data_summary, time_context, source=source)
+                          data_summary, time_context, source=source,
+                          timeframe=timeframe)
     return report, evaluations
 
 
@@ -475,7 +549,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--days", type=int, default=data_loader.DEFAULT_DAYS,
                         help="History length in days (default: 730).")
     parser.add_argument("--timeframe", default=data_loader.DEFAULT_TIMEFRAME,
-                        help="Candle timeframe (default: 1h).")
+                        choices=list(data_loader.SUPPORTED_TIMEFRAMES),
+                        help="Candle timeframe (default: 1h). A horizon is "
+                             "always counted in bars of this timeframe.")
     parser.add_argument("--csv", default=None,
                         help="Offline mode: 'BTC/USDT=path.csv,ETH/USDT=path.csv'.")
     parser.add_argument("--cache-dir", default=data_loader.CACHE_DIR,
@@ -507,13 +583,15 @@ def main(argv: Optional[List[str]] = None) -> int:
               if csv_map else "CCXT KuCoin public API (spot)")
     report, _ = run(args.pattern, assets, args.horizon, candles_by_asset, args.days,
                     min_win_rate=args.min_win_rate, n_splits=args.splits,
-                    source=source)
+                    source=source, timeframe=args.timeframe)
 
     os.makedirs(args.output, exist_ok=True)
     stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     asset_slug = "both" if len(assets) > 1 else assets[0].replace("/", "")
-    path = os.path.join(args.output,
-                        f"pattern_research_{args.pattern}_{asset_slug}_h{args.horizon}_{stamp}.md")
+    path = os.path.join(
+        args.output,
+        f"pattern_research_{args.pattern}_{asset_slug}_{args.timeframe}"
+        f"_h{args.horizon}_{stamp}.md")
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(report)
 

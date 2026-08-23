@@ -5,6 +5,10 @@ Two classical swing-structure patterns on 1h candles:
 * **HH/HL** (higher highs + higher lows) → bullish structure, signal ``+1``
 * **LL/LH** (lower lows + lower highs)  → bearish structure, signal ``-1``
 
+A third detector, :func:`detect_momentum_fade_combined`, emits the **inverse**
+of the combined signal (fade / mean-reversion reading) for comparison — it is
+evaluated only when explicitly requested, never bundled into ``--pattern all``.
+
 No look-ahead, guaranteed two ways
 ----------------------------------
 1. The raw condition at bar ``t`` only compares bars ``t, t-1, ... t-lookback``
@@ -96,6 +100,30 @@ def detect_momentum_combined(
     exclusive by construction — a bar cannot be both)."""
     return (detect_higher_high_higher_low(candles, lookback)
             + detect_lower_low_lower_high(candles, lookback)).rename("momentum")
+
+
+def detect_momentum_fade_combined(
+    candles: pd.DataFrame, lookback: int = DEFAULT_LOOKBACK
+) -> pd.Series:
+    """Fade (mean-reversion) reading of the momentum signal.
+
+    Exact inverse of :func:`detect_momentum_combined`:
+
+    * HH/HL detected → ``-1`` (SELL the bullish structure)
+    * LL/LH detected → ``+1`` (BUY the bearish structure)
+    * no structure   → ``0``
+
+    Implemented literally as the negation of ``detect_momentum_combined``, so
+    the ``.shift(1)`` timing and the no-look-ahead guarantee are inherited
+    unchanged: ``signal[t]`` still reflects a structure that completed at bar
+    ``t-1`` and is knowable before bar ``t`` opens.
+
+    Honesty caveat (read before trading this): **a sub-50% continuation hit
+    rate is NOT evidence of a tradable fade edge.** The inverse signal must
+    clear G1–G6 and the Diebold-Mariano test on its own — near-50% readings
+    close *both* the momentum and the fade interpretation.
+    """
+    return (-detect_momentum_combined(candles, lookback)).rename("momentum_fade")
 
 
 def compute_forward_return(
