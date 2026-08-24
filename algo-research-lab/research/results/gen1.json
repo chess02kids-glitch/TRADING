@@ -1,0 +1,2094 @@
+[
+ {
+  "genome_id": "740a46330916",
+  "genome": {
+   "signal_type": "funding_rate_contrarian",
+   "long_threshold": -0.01713018514974665,
+   "short_threshold": 0.011824659584488445,
+   "holding_bars": 11,
+   "size_pct": 0.277799714681747,
+   "exit_type": "fixed_hold",
+   "genome_id": "740a46330916",
+   "name": "funding_ra_740a46330916"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 650,
+   "total_return_pct": -32.03432836756369,
+   "sharpe": -0.7875331738226388,
+   "sortino": -1.153867630866088,
+   "max_drawdown_pct": 36.87792765392671,
+   "profit_factor": 0.8050764612666376,
+   "win_rate_pct": 44.684129429892145
+  }
+ },
+ {
+  "genome_id": "29dcf8477fe3",
+  "genome": {
+   "signal_type": "spread_zscore",
+   "asset_a": "BTC/USDT",
+   "asset_b": "ETH/USDT",
+   "zscore_window": 108,
+   "entry_zscore": 1.8897633646808962,
+   "exit_zscore": 0.0897321386352074,
+   "size_pct": 0.7791131607885973,
+   "direction": "momentum",
+   "genome_id": "29dcf8477fe3",
+   "name": "spread_zsc_29dcf8477fe3"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "WALK_FORWARD",
+  "failure_reason": "FAILED_OOS_CONSISTENCY",
+  "metrics": {
+   "total_trades": 148,
+   "total_return_pct": 43.23827201088354,
+   "sharpe": 1.0307255734109517,
+   "sortino": 1.4886843056002004,
+   "max_drawdown_pct": 14.489300315988917,
+   "profit_factor": 1.4260226867066725,
+   "win_rate_pct": 34.45945945945946,
+   "oos_sharpe": -0.7006772977725043,
+   "oos_positive_splits": 1
+  }
+ },
+ {
+  "genome_id": "4d8893b22c00",
+  "genome": {
+   "signal_type": "har_regime_sized",
+   "base_signal": "reversion",
+   "entry_regime": "low",
+   "har_window": 5,
+   "breakout_multiplier": 2.057344823500059,
+   "size_formula": "inverse_vol",
+   "holding_bars": 1,
+   "genome_id": "4d8893b22c00",
+   "name": "har_regime_4d8893b22c00"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 4221,
+   "total_return_pct": -99.99972917075607,
+   "sharpe": -18.97560887980849,
+   "sortino": -21.850082455007588,
+   "max_drawdown_pct": 99.99972917075566,
+   "profit_factor": 0.4129919592099841,
+   "win_rate_pct": 19.118692253020612
+  }
+ },
+ {
+  "genome_id": "374f43dc8d9d",
+  "genome": {
+   "signal_type": "vol_regime_breakout",
+   "atr_window": 23,
+   "expansion_factor": 1.8489665824211825,
+   "breakout_lookback": 21,
+   "holding_bars": 17,
+   "size_pct": 0.35973068883633574,
+   "regime_filter": "low_only",
+   "genome_id": "374f43dc8d9d",
+   "name": "vol_regime_374f43dc8d9d"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "ZERO_TRADES_BUG",
+  "metrics": {
+   "total_trades": 0,
+   "total_return_pct": 0.0,
+   "sharpe": 0.0,
+   "sortino": 0.0,
+   "max_drawdown_pct": 0.0,
+   "profit_factor": 0.0,
+   "win_rate_pct": 0.0
+  }
+ },
+ {
+  "genome_id": "5297807f0f1c",
+  "genome": {
+   "signal_type": "multi_asset_momentum",
+   "confirmation_asset": "BTC/USDT",
+   "primary_asset": "ETH/USDT",
+   "lookback_bars": 39,
+   "momentum_threshold": 0.019640840720443142,
+   "require_confirmation": false,
+   "holding_bars": 22,
+   "size_pct": 0.41756295963447987,
+   "genome_id": "5297807f0f1c",
+   "name": "multi_asse_5297807f0f1c"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 855,
+   "total_return_pct": -17.29262166233169,
+   "sharpe": 0.03397418568425616,
+   "sortino": 0.04776308924958138,
+   "max_drawdown_pct": 38.91952615240707,
+   "profit_factor": 0.9694848836812293,
+   "win_rate_pct": 42.15456674473068
+  }
+ },
+ {
+  "genome_id": "8e35edd0c9f5",
+  "genome": {
+   "signal_type": "funding_trend",
+   "funding_ma_window": 10,
+   "trend_threshold": 0.016051126674648024,
+   "price_confirm": false,
+   "holding_bars": 17,
+   "size_pct": 0.20157200768438277,
+   "genome_id": "8e35edd0c9f5",
+   "name": "funding_tr_8e35edd0c9f5"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 440,
+   "total_return_pct": -22.74959397121657,
+   "sharpe": -0.7182877288384544,
+   "sortino": -0.9757098868553093,
+   "max_drawdown_pct": 24.210754865639597,
+   "profit_factor": 0.7821471644487575,
+   "win_rate_pct": 44.41913439635535
+  }
+ },
+ {
+  "genome_id": "c065ac16d6e0",
+  "genome": {
+   "signal_type": "funding_rate_contrarian",
+   "long_threshold": -0.018120777613030672,
+   "short_threshold": 0.039514294831793056,
+   "holding_bars": 18,
+   "size_pct": 0.9339945448266637,
+   "exit_type": "fixed_hold",
+   "genome_id": "c065ac16d6e0",
+   "name": "funding_ra_c065ac16d6e0"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 267,
+   "total_return_pct": 1.879607211131406,
+   "sharpe": 0.18057201957463115,
+   "sortino": 0.27062959955134464,
+   "max_drawdown_pct": 55.76556525937744,
+   "profit_factor": 1.005137698960393,
+   "win_rate_pct": 50.187265917603
+  }
+ },
+ {
+  "genome_id": "4028a30c6c73",
+  "genome": {
+   "signal_type": "spread_zscore",
+   "asset_a": "BTC/USDT",
+   "asset_b": "ETH/USDT",
+   "zscore_window": 95,
+   "entry_zscore": 2.9140756842542697,
+   "exit_zscore": 0.4714745013206075,
+   "size_pct": 0.5822272369344732,
+   "direction": "mean_revert",
+   "genome_id": "4028a30c6c73",
+   "name": "spread_zsc_4028a30c6c73"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 113,
+   "total_return_pct": -31.39141829329074,
+   "sharpe": -1.6264864232768292,
+   "sortino": -2.270487435428438,
+   "max_drawdown_pct": 34.370837792641055,
+   "profit_factor": 0.40853503505487937,
+   "win_rate_pct": 45.13274336283185
+  }
+ },
+ {
+  "genome_id": "27683a9de517",
+  "genome": {
+   "signal_type": "har_regime_sized",
+   "base_signal": "reversion",
+   "entry_regime": "medium",
+   "har_window": 5,
+   "breakout_multiplier": 2.640055843685257,
+   "size_formula": "fixed",
+   "holding_bars": 3,
+   "genome_id": "27683a9de517",
+   "name": "har_regime_27683a9de517"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 1818,
+   "total_return_pct": -98.4609596964713,
+   "sharpe": -4.519464070540484,
+   "sortino": -6.065902301953249,
+   "max_drawdown_pct": 98.53491733559562,
+   "profit_factor": 0.6697293050988035,
+   "win_rate_pct": 37.403740374037405
+  }
+ },
+ {
+  "genome_id": "e3dde25b71c5",
+  "genome": {
+   "signal_type": "vol_regime_breakout",
+   "atr_window": 34,
+   "expansion_factor": 2.233235162578311,
+   "breakout_lookback": 50,
+   "holding_bars": 3,
+   "size_pct": 0.3833157230883618,
+   "regime_filter": "low_only",
+   "genome_id": "e3dde25b71c5",
+   "name": "vol_regime_e3dde25b71c5"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "ZERO_TRADES_BUG",
+  "metrics": {
+   "total_trades": 0,
+   "total_return_pct": 0.0,
+   "sharpe": 0.0,
+   "sortino": 0.0,
+   "max_drawdown_pct": 0.0,
+   "profit_factor": 0.0,
+   "win_rate_pct": 0.0
+  }
+ },
+ {
+  "genome_id": "3c05dd396e41",
+  "genome": {
+   "signal_type": "multi_asset_momentum",
+   "confirmation_asset": "BTC/USDT",
+   "primary_asset": "ETH/USDT",
+   "lookback_bars": 62,
+   "momentum_threshold": 0.009900929480968265,
+   "require_confirmation": false,
+   "holding_bars": 6,
+   "size_pct": 0.6857142058830289,
+   "genome_id": "3c05dd396e41",
+   "name": "multi_asse_3c05dd396e41"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 2687,
+   "total_return_pct": -97.8846159419228,
+   "sharpe": -2.0553901002219543,
+   "sortino": -2.8878193972785895,
+   "max_drawdown_pct": 98.08295134440797,
+   "profit_factor": 0.819558578171636,
+   "win_rate_pct": 41.42165984369185
+  }
+ },
+ {
+  "genome_id": "56deedfd141f",
+  "genome": {
+   "signal_type": "funding_trend",
+   "funding_ma_window": 17,
+   "trend_threshold": 0.010592501477966868,
+   "price_confirm": true,
+   "holding_bars": 13,
+   "size_pct": 0.7878287746246099,
+   "genome_id": "56deedfd141f",
+   "name": "funding_tr_56deedfd141f"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 589,
+   "total_return_pct": -82.35148999574558,
+   "sharpe": -1.314799372489392,
+   "sortino": -1.7852603406807377,
+   "max_drawdown_pct": 83.48787237565088,
+   "profit_factor": 0.7315337947234156,
+   "win_rate_pct": 43.197278911564624
+  }
+ },
+ {
+  "genome_id": "2e2521750cfb",
+  "genome": {
+   "signal_type": "funding_rate_contrarian",
+   "long_threshold": -0.018124092905824667,
+   "short_threshold": 0.02215758478378885,
+   "holding_bars": 7,
+   "size_pct": 0.27107728662970315,
+   "exit_type": "funding_flip",
+   "genome_id": "2e2521750cfb",
+   "name": "funding_ra_2e2521750cfb"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_TRADE_COUNT",
+  "metrics": {
+   "total_trades": 38,
+   "total_return_pct": -12.796316793039436,
+   "sharpe": 0.05095300299542253,
+   "sortino": 0.07540486900676734,
+   "max_drawdown_pct": 61.00861145293723,
+   "profit_factor": 0.8064670278936968,
+   "win_rate_pct": 54.054054054054056
+  }
+ },
+ {
+  "genome_id": "f39fa2fa9e46",
+  "genome": {
+   "signal_type": "spread_zscore",
+   "asset_a": "BTC/USDT",
+   "asset_b": "ETH/USDT",
+   "zscore_window": 154,
+   "entry_zscore": 2.141090300949154,
+   "exit_zscore": 0.4061003013367137,
+   "size_pct": 0.3751239914504355,
+   "direction": "mean_revert",
+   "genome_id": "f39fa2fa9e46",
+   "name": "spread_zsc_f39fa2fa9e46"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 114,
+   "total_return_pct": -33.37299991231974,
+   "sharpe": -2.3039128659093957,
+   "sortino": -3.2029986481135366,
+   "max_drawdown_pct": 34.39098243791437,
+   "profit_factor": 0.25417255743288714,
+   "win_rate_pct": 49.122807017543856
+  }
+ },
+ {
+  "genome_id": "edc54c99b297",
+  "genome": {
+   "signal_type": "har_regime_sized",
+   "base_signal": "reversion",
+   "entry_regime": "medium",
+   "har_window": 22,
+   "breakout_multiplier": 1.9009139160993997,
+   "size_formula": "fixed",
+   "holding_bars": 12,
+   "genome_id": "edc54c99b297",
+   "name": "har_regime_edc54c99b297"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 1583,
+   "total_return_pct": -96.02181478338282,
+   "sharpe": -2.985869226505098,
+   "sortino": -4.179854977476247,
+   "max_drawdown_pct": 96.851947611271,
+   "profit_factor": 0.7911558008892222,
+   "win_rate_pct": 36.38660770688566
+  }
+ },
+ {
+  "genome_id": "960f12a60692",
+  "genome": {
+   "signal_type": "vol_regime_breakout",
+   "atr_window": 13,
+   "expansion_factor": 2.0592765893056177,
+   "breakout_lookback": 11,
+   "holding_bars": 16,
+   "size_pct": 0.6299823697768538,
+   "regime_filter": "low_only",
+   "genome_id": "960f12a60692",
+   "name": "vol_regime_960f12a60692"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "ZERO_TRADES_BUG",
+  "metrics": {
+   "total_trades": 0,
+   "total_return_pct": 0.0,
+   "sharpe": 0.0,
+   "sortino": 0.0,
+   "max_drawdown_pct": 0.0,
+   "profit_factor": 0.0,
+   "win_rate_pct": 0.0
+  }
+ },
+ {
+  "genome_id": "52e077f93d1f",
+  "genome": {
+   "signal_type": "multi_asset_momentum",
+   "confirmation_asset": "BTC/USDT",
+   "primary_asset": "ETH/USDT",
+   "lookback_bars": 47,
+   "momentum_threshold": 0.005238871590893634,
+   "require_confirmation": true,
+   "holding_bars": 21,
+   "size_pct": 0.939689690868935,
+   "genome_id": "52e077f93d1f",
+   "name": "multi_asse_52e077f93d1f"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 1009,
+   "total_return_pct": -69.09445246249878,
+   "sharpe": -0.02816807587541029,
+   "sortino": -0.03975878503992151,
+   "max_drawdown_pct": 79.96534005366097,
+   "profit_factor": 0.9007243328069849,
+   "win_rate_pct": 42.65873015873016
+  }
+ },
+ {
+  "genome_id": "77685657161b",
+  "genome": {
+   "signal_type": "funding_trend",
+   "funding_ma_window": 23,
+   "trend_threshold": 0.00921338774245501,
+   "price_confirm": true,
+   "holding_bars": 14,
+   "size_pct": 0.8580991804402357,
+   "genome_id": "77685657161b",
+   "name": "funding_tr_77685657161b"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 804,
+   "total_return_pct": -86.0540611673405,
+   "sharpe": -1.216915908025527,
+   "sortino": -1.6709720838300457,
+   "max_drawdown_pct": 87.3155936015102,
+   "profit_factor": 0.7836314373081127,
+   "win_rate_pct": 44.15422885572139
+  }
+ },
+ {
+  "genome_id": "1e275223cb40",
+  "genome": {
+   "signal_type": "funding_rate_contrarian",
+   "long_threshold": -0.0060943130554276526,
+   "short_threshold": 0.04531258453590022,
+   "holding_bars": 23,
+   "size_pct": 0.5733198258310187,
+   "exit_type": "funding_flip",
+   "genome_id": "1e275223cb40",
+   "name": "funding_ra_1e275223cb40"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 115,
+   "total_return_pct": -7.566730482229714,
+   "sharpe": 0.6270905082470993,
+   "sortino": 1.8212034318790402,
+   "max_drawdown_pct": 119.850101774652,
+   "profit_factor": 0.9484572125558748,
+   "win_rate_pct": 48.24561403508772
+  }
+ },
+ {
+  "genome_id": "ddce62b08f4e",
+  "genome": {
+   "signal_type": "spread_zscore",
+   "asset_a": "BTC/USDT",
+   "asset_b": "ETH/USDT",
+   "zscore_window": 12,
+   "entry_zscore": 2.9781859233171706,
+   "exit_zscore": 0.3511723083149389,
+   "size_pct": 0.6053390949328431,
+   "direction": "momentum",
+   "genome_id": "ddce62b08f4e",
+   "name": "spread_zsc_ddce62b08f4e"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_TRADE_COUNT",
+  "metrics": {
+   "total_trades": 46,
+   "total_return_pct": -8.102400300453082,
+   "sharpe": -1.3666732001153485,
+   "sortino": -1.8708623337146268,
+   "max_drawdown_pct": 8.4453100452081,
+   "profit_factor": 0.30326938963571376,
+   "win_rate_pct": 23.91304347826087
+  }
+ },
+ {
+  "genome_id": "ec2736d30bd6",
+  "genome": {
+   "signal_type": "har_regime_sized",
+   "base_signal": "reversion",
+   "entry_regime": "low",
+   "har_window": 5,
+   "breakout_multiplier": 1.7536698327370541,
+   "size_formula": "inverse_vol",
+   "holding_bars": 8,
+   "genome_id": "ec2736d30bd6",
+   "name": "har_regime_ec2736d30bd6"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 3081,
+   "total_return_pct": -99.98527400107525,
+   "sharpe": -10.547629787568603,
+   "sortino": -12.795022265225283,
+   "max_drawdown_pct": 99.98585280657599,
+   "profit_factor": 0.5648598428569274,
+   "win_rate_pct": 25.681818181818183
+  }
+ },
+ {
+  "genome_id": "95f3f0e77929",
+  "genome": {
+   "signal_type": "vol_regime_breakout",
+   "atr_window": 17,
+   "expansion_factor": 1.9789637383582388,
+   "breakout_lookback": 47,
+   "holding_bars": 16,
+   "size_pct": 0.46445555395391935,
+   "regime_filter": "low_only",
+   "genome_id": "95f3f0e77929",
+   "name": "vol_regime_95f3f0e77929"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "ZERO_TRADES_BUG",
+  "metrics": {
+   "total_trades": 0,
+   "total_return_pct": 0.0,
+   "sharpe": 0.0,
+   "sortino": 0.0,
+   "max_drawdown_pct": 0.0,
+   "profit_factor": 0.0,
+   "win_rate_pct": 0.0
+  }
+ },
+ {
+  "genome_id": "21a06ae2632e",
+  "genome": {
+   "signal_type": "multi_asset_momentum",
+   "confirmation_asset": "BTC/USDT",
+   "primary_asset": "ETH/USDT",
+   "lookback_bars": 35,
+   "momentum_threshold": 0.008171980332640051,
+   "require_confirmation": true,
+   "holding_bars": 14,
+   "size_pct": 0.3505319775877219,
+   "genome_id": "21a06ae2632e",
+   "name": "multi_asse_21a06ae2632e"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 1311,
+   "total_return_pct": -66.07962234614908,
+   "sharpe": -1.1410268711356408,
+   "sortino": -1.611364714560936,
+   "max_drawdown_pct": 69.03974786465491,
+   "profit_factor": 0.8654215687090635,
+   "win_rate_pct": 40.38167938931297
+  }
+ },
+ {
+  "genome_id": "04525d3d78ae",
+  "genome": {
+   "signal_type": "funding_trend",
+   "funding_ma_window": 14,
+   "trend_threshold": 0.008389654751597224,
+   "price_confirm": true,
+   "holding_bars": 4,
+   "size_pct": 0.45732395206336895,
+   "genome_id": "04525d3d78ae",
+   "name": "funding_tr_04525d3d78ae"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 2253,
+   "total_return_pct": -95.29309386383804,
+   "sharpe": -4.814799792653817,
+   "sortino": -6.503971891629662,
+   "max_drawdown_pct": 95.35067409164189,
+   "profit_factor": 0.5841907664711823,
+   "win_rate_pct": 34.17665335108744
+  }
+ },
+ {
+  "genome_id": "40c54c0c4cc0",
+  "genome": {
+   "signal_type": "funding_rate_contrarian",
+   "long_threshold": -0.015736322598673795,
+   "short_threshold": 0.04677709751373284,
+   "holding_bars": 5,
+   "size_pct": 0.3770262580909034,
+   "exit_type": "funding_flip",
+   "genome_id": "40c54c0c4cc0",
+   "name": "funding_ra_40c54c0c4cc0"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_TRADE_COUNT",
+  "metrics": {
+   "total_trades": 42,
+   "total_return_pct": 36.92495362532481,
+   "sharpe": 0.39182151821583217,
+   "sortino": 0.5859423417349018,
+   "max_drawdown_pct": 66.74353326362173,
+   "profit_factor": 1.7250565860238647,
+   "win_rate_pct": 65.85365853658537
+  }
+ },
+ {
+  "genome_id": "cef29269e7e2",
+  "genome": {
+   "signal_type": "spread_zscore",
+   "asset_a": "BTC/USDT",
+   "asset_b": "ETH/USDT",
+   "zscore_window": 165,
+   "entry_zscore": 1.9531154401480648,
+   "exit_zscore": 0.0671114002883394,
+   "size_pct": 0.9083396992125413,
+   "direction": "momentum",
+   "genome_id": "cef29269e7e2",
+   "name": "spread_zsc_cef29269e7e2"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "CONCENTRATION",
+  "failure_reason": "HIGH_CONCENTRATION",
+  "metrics": {
+   "total_trades": 101,
+   "total_return_pct": 40.29769020906058,
+   "sharpe": 0.853624550499399,
+   "sortino": 1.2143298849818247,
+   "max_drawdown_pct": 18.829688764105683,
+   "profit_factor": 1.44921168994336,
+   "win_rate_pct": 38.613861386138616,
+   "oos_sharpe": 0.06386480574354503,
+   "oos_positive_splits": 2,
+   "single_trade_pct": 0.2503120658964364,
+   "top5_pct": 1.122659850207048
+  }
+ },
+ {
+  "genome_id": "cf12dc989c0c",
+  "genome": {
+   "signal_type": "har_regime_sized",
+   "base_signal": "reversion",
+   "entry_regime": "medium",
+   "har_window": 22,
+   "breakout_multiplier": 2.1815133445082484,
+   "size_formula": "inverse_vol",
+   "holding_bars": 7,
+   "genome_id": "cf12dc989c0c",
+   "name": "har_regime_cf12dc989c0c"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 1581,
+   "total_return_pct": -96.24496395438504,
+   "sharpe": -4.369575274395285,
+   "sortino": -5.7827745555235985,
+   "max_drawdown_pct": 96.9223233594364,
+   "profit_factor": 0.7201071606415732,
+   "win_rate_pct": 36.11638203668564
+  }
+ },
+ {
+  "genome_id": "8f95d0221ce1",
+  "genome": {
+   "signal_type": "vol_regime_breakout",
+   "atr_window": 10,
+   "expansion_factor": 1.4505670480895316,
+   "breakout_lookback": 25,
+   "holding_bars": 18,
+   "size_pct": 0.4847662250129935,
+   "regime_filter": "low_only",
+   "genome_id": "8f95d0221ce1",
+   "name": "vol_regime_8f95d0221ce1"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "ZERO_TRADES_BUG",
+  "metrics": {
+   "total_trades": 0,
+   "total_return_pct": 0.0,
+   "sharpe": 0.0,
+   "sortino": 0.0,
+   "max_drawdown_pct": 0.0,
+   "profit_factor": 0.0,
+   "win_rate_pct": 0.0
+  }
+ },
+ {
+  "genome_id": "4f298c92ecb7",
+  "genome": {
+   "signal_type": "multi_asset_momentum",
+   "confirmation_asset": "ETH/USDT",
+   "primary_asset": "BTC/USDT",
+   "lookback_bars": 18,
+   "momentum_threshold": 0.047222071588379946,
+   "require_confirmation": true,
+   "holding_bars": 14,
+   "size_pct": 0.7716405837850278,
+   "genome_id": "4f298c92ecb7",
+   "name": "multi_asse_4f298c92ecb7"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "WALK_FORWARD",
+  "failure_reason": "FAILED_OOS_CONSISTENCY",
+  "metrics": {
+   "total_trades": 395,
+   "total_return_pct": 33.95027838379743,
+   "sharpe": 0.5160268083172043,
+   "sortino": 0.7276184555681372,
+   "max_drawdown_pct": 41.379723200433155,
+   "profit_factor": 1.0672361218355624,
+   "win_rate_pct": 48.860759493670884,
+   "oos_sharpe": -0.2603300642865093,
+   "oos_positive_splits": 2
+  }
+ },
+ {
+  "genome_id": "126350b5984f",
+  "genome": {
+   "signal_type": "funding_trend",
+   "funding_ma_window": 5,
+   "trend_threshold": 0.017990698116926246,
+   "price_confirm": true,
+   "holding_bars": 13,
+   "size_pct": 0.5093282066680264,
+   "genome_id": "126350b5984f",
+   "name": "funding_tr_126350b5984f"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 358,
+   "total_return_pct": -55.10961697931974,
+   "sharpe": -1.159713536323537,
+   "sortino": -1.5462528328165348,
+   "max_drawdown_pct": 55.28038207037073,
+   "profit_factor": 0.6758629246624759,
+   "win_rate_pct": 40.056022408963585
+  }
+ },
+ {
+  "genome_id": "ec0ebce9b667",
+  "genome": {
+   "signal_type": "funding_rate_contrarian",
+   "long_threshold": -0.01282323003350071,
+   "short_threshold": 0.014201695406519051,
+   "holding_bars": 18,
+   "size_pct": 0.5004383203125585,
+   "exit_type": "fixed_hold",
+   "genome_id": "ec0ebce9b667",
+   "name": "funding_ra_ec0ebce9b667"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 447,
+   "total_return_pct": -25.61587710615238,
+   "sharpe": -0.2093740133386265,
+   "sortino": -0.31031261536422494,
+   "max_drawdown_pct": 56.34133990512537,
+   "profit_factor": 0.903013401161287,
+   "win_rate_pct": 45.964125560538115
+  }
+ },
+ {
+  "genome_id": "b3a546f4820a",
+  "genome": {
+   "signal_type": "spread_zscore",
+   "asset_a": "BTC/USDT",
+   "asset_b": "ETH/USDT",
+   "zscore_window": 160,
+   "entry_zscore": 2.043289851183125,
+   "exit_zscore": 0.17624566640122297,
+   "size_pct": 0.6717672179982304,
+   "direction": "mean_revert",
+   "genome_id": "b3a546f4820a",
+   "name": "spread_zsc_b3a546f4820a"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 109,
+   "total_return_pct": -49.68120136090363,
+   "sharpe": -2.0076457466668103,
+   "sortino": -2.809910697198365,
+   "max_drawdown_pct": 52.39205890226837,
+   "profit_factor": 0.28807890935510166,
+   "win_rate_pct": 49.54128440366973
+  }
+ },
+ {
+  "genome_id": "5d54abc1b70e",
+  "genome": {
+   "signal_type": "har_regime_sized",
+   "base_signal": "reversion",
+   "entry_regime": "low",
+   "har_window": 22,
+   "breakout_multiplier": 1.698396675697454,
+   "size_formula": "inverse_vol",
+   "holding_bars": 11,
+   "genome_id": "5d54abc1b70e",
+   "name": "har_regime_5d54abc1b70e"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 3063,
+   "total_return_pct": -99.97288960920139,
+   "sharpe": -8.524531703729242,
+   "sortino": -10.756631233466114,
+   "max_drawdown_pct": 99.97712866204361,
+   "profit_factor": 0.7147075424943222,
+   "win_rate_pct": 28.216851730894838
+  }
+ },
+ {
+  "genome_id": "6b99edee5e86",
+  "genome": {
+   "signal_type": "vol_regime_breakout",
+   "atr_window": 19,
+   "expansion_factor": 1.4162669713265421,
+   "breakout_lookback": 35,
+   "holding_bars": 12,
+   "size_pct": 0.7179671918385001,
+   "regime_filter": "any",
+   "genome_id": "6b99edee5e86",
+   "name": "vol_regime_6b99edee5e86"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 81,
+   "total_return_pct": -41.80359169503599,
+   "sharpe": -0.7597173081359274,
+   "sortino": -0.9968605802812049,
+   "max_drawdown_pct": 48.86247925851789,
+   "profit_factor": 0.5345672801980472,
+   "win_rate_pct": 41.9753086419753
+  }
+ },
+ {
+  "genome_id": "9e4950face01",
+  "genome": {
+   "signal_type": "multi_asset_momentum",
+   "confirmation_asset": "ETH/USDT",
+   "primary_asset": "BTC/USDT",
+   "lookback_bars": 25,
+   "momentum_threshold": 0.046780416863307216,
+   "require_confirmation": true,
+   "holding_bars": 22,
+   "size_pct": 0.45050198628320004,
+   "genome_id": "9e4950face01",
+   "name": "multi_asse_9e4950face01"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 375,
+   "total_return_pct": -21.75051375586142,
+   "sharpe": -0.1300730447928664,
+   "sortino": -0.1812983902021985,
+   "max_drawdown_pct": 43.57139211227521,
+   "profit_factor": 0.9210998061761084,
+   "win_rate_pct": 45.86666666666667
+  }
+ },
+ {
+  "genome_id": "da83b87bf8a3",
+  "genome": {
+   "signal_type": "funding_trend",
+   "funding_ma_window": 24,
+   "trend_threshold": 0.013135615328629481,
+   "price_confirm": true,
+   "holding_bars": 21,
+   "size_pct": 0.8857226405981278,
+   "genome_id": "da83b87bf8a3",
+   "name": "funding_tr_da83b87bf8a3"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 352,
+   "total_return_pct": -78.47468625247667,
+   "sharpe": -0.9689314219026521,
+   "sortino": -1.324644411787521,
+   "max_drawdown_pct": 81.32982712968587,
+   "profit_factor": 0.7596815108410062,
+   "win_rate_pct": 44.44444444444444
+  }
+ },
+ {
+  "genome_id": "f7a26e68864c",
+  "genome": {
+   "signal_type": "funding_rate_contrarian",
+   "long_threshold": -0.019784520257390956,
+   "short_threshold": 0.018710171266176433,
+   "holding_bars": 8,
+   "size_pct": 0.43907721957784496,
+   "exit_type": "funding_flip",
+   "genome_id": "f7a26e68864c",
+   "name": "funding_ra_f7a26e68864c"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_TRADE_COUNT",
+  "metrics": {
+   "total_trades": 34,
+   "total_return_pct": -19.101316544262513,
+   "sharpe": 0.43812774882083955,
+   "sortino": 0.6715767119279445,
+   "max_drawdown_pct": 94.17948407321629,
+   "profit_factor": 0.8251962793803836,
+   "win_rate_pct": 60.60606060606061
+  }
+ },
+ {
+  "genome_id": "f621b4094691",
+  "genome": {
+   "signal_type": "spread_zscore",
+   "asset_a": "BTC/USDT",
+   "asset_b": "ETH/USDT",
+   "zscore_window": 17,
+   "entry_zscore": 2.0852889091032303,
+   "exit_zscore": 0.040737232715373384,
+   "size_pct": 0.16193286793076933,
+   "direction": "mean_revert",
+   "genome_id": "f621b4094691",
+   "name": "spread_zsc_f621b4094691"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 429,
+   "total_return_pct": -27.111536407025348,
+   "sharpe": -4.071372639724837,
+   "sortino": -5.659512162897505,
+   "max_drawdown_pct": 27.52962699462994,
+   "profit_factor": 0.32754935879038405,
+   "win_rate_pct": 36.36363636363637
+  }
+ },
+ {
+  "genome_id": "c960b6d5cb34",
+  "genome": {
+   "signal_type": "har_regime_sized",
+   "base_signal": "reversion",
+   "entry_regime": "low",
+   "har_window": 5,
+   "breakout_multiplier": 1.926360703298266,
+   "size_formula": "fixed",
+   "holding_bars": 9,
+   "genome_id": "c960b6d5cb34",
+   "name": "har_regime_c960b6d5cb34"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 3081,
+   "total_return_pct": -99.98495729495819,
+   "sharpe": -10.486476092308244,
+   "sortino": -12.733099293537732,
+   "max_drawdown_pct": 99.9860093889498,
+   "profit_factor": 0.5687578192349695,
+   "win_rate_pct": 25.616883116883116
+  }
+ },
+ {
+  "genome_id": "871029e72c85",
+  "genome": {
+   "signal_type": "vol_regime_breakout",
+   "atr_window": 32,
+   "expansion_factor": 2.061264244934084,
+   "breakout_lookback": 39,
+   "holding_bars": 22,
+   "size_pct": 0.6517734209640849,
+   "regime_filter": "low_only",
+   "genome_id": "871029e72c85",
+   "name": "vol_regime_871029e72c85"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "ZERO_TRADES_BUG",
+  "metrics": {
+   "total_trades": 0,
+   "total_return_pct": 0.0,
+   "sharpe": 0.0,
+   "sortino": 0.0,
+   "max_drawdown_pct": 0.0,
+   "profit_factor": 0.0,
+   "win_rate_pct": 0.0
+  }
+ },
+ {
+  "genome_id": "fa7bb1004e0c",
+  "genome": {
+   "signal_type": "multi_asset_momentum",
+   "confirmation_asset": "BTC/USDT",
+   "primary_asset": "ETH/USDT",
+   "lookback_bars": 52,
+   "momentum_threshold": 0.010708791856005515,
+   "require_confirmation": true,
+   "holding_bars": 15,
+   "size_pct": 0.7396548865578578,
+   "genome_id": "fa7bb1004e0c",
+   "name": "multi_asse_fa7bb1004e0c"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 1149,
+   "total_return_pct": -50.988797566533684,
+   "sharpe": -0.028599094276952723,
+   "sortino": -0.04048022181666504,
+   "max_drawdown_pct": 69.67095234299143,
+   "profit_factor": 0.9512883266484436,
+   "win_rate_pct": 43.46689895470383
+  }
+ },
+ {
+  "genome_id": "49ca67eacce9",
+  "genome": {
+   "signal_type": "funding_trend",
+   "funding_ma_window": 10,
+   "trend_threshold": 0.009027678616547435,
+   "price_confirm": false,
+   "holding_bars": 20,
+   "size_pct": 0.8363937454831994,
+   "genome_id": "49ca67eacce9",
+   "name": "funding_tr_49ca67eacce9"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 856,
+   "total_return_pct": -93.56205262698232,
+   "sharpe": -1.256885885797007,
+   "sortino": -1.709813655684425,
+   "max_drawdown_pct": 94.4692537101601,
+   "profit_factor": 0.7973034414295805,
+   "win_rate_pct": 43.27485380116959
+  }
+ },
+ {
+  "genome_id": "413319476b9f",
+  "genome": {
+   "signal_type": "funding_rate_contrarian",
+   "long_threshold": -0.008667203570351681,
+   "short_threshold": 0.042202803339499065,
+   "holding_bars": 5,
+   "size_pct": 0.3981207024375776,
+   "exit_type": "fixed_hold",
+   "genome_id": "413319476b9f",
+   "name": "funding_ra_413319476b9f"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 844,
+   "total_return_pct": -49.59432030970542,
+   "sharpe": -1.1078554188026422,
+   "sortino": -1.6479706650398287,
+   "max_drawdown_pct": 54.349960321915155,
+   "profit_factor": 0.776918069880765,
+   "win_rate_pct": 40.047393364928915
+  }
+ },
+ {
+  "genome_id": "0e0ea471a34b",
+  "genome": {
+   "signal_type": "spread_zscore",
+   "asset_a": "BTC/USDT",
+   "asset_b": "ETH/USDT",
+   "zscore_window": 36,
+   "entry_zscore": 1.8439292211538043,
+   "exit_zscore": 0.039777086006360485,
+   "size_pct": 0.29191578575098265,
+   "direction": "mean_revert",
+   "genome_id": "0e0ea471a34b",
+   "name": "spread_zsc_0e0ea471a34b"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 337,
+   "total_return_pct": -44.64174221921681,
+   "sharpe": -3.950179272386621,
+   "sortino": -5.405056332592882,
+   "max_drawdown_pct": 44.90161653902123,
+   "profit_factor": 0.2727701802007276,
+   "win_rate_pct": 39.46587537091988
+  }
+ },
+ {
+  "genome_id": "fa9c37605433",
+  "genome": {
+   "signal_type": "har_regime_sized",
+   "base_signal": "reversion",
+   "entry_regime": "low",
+   "har_window": 22,
+   "breakout_multiplier": 1.8036002441673262,
+   "size_formula": "fixed",
+   "holding_bars": 7,
+   "genome_id": "fa9c37605433",
+   "name": "har_regime_fa9c37605433"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 3064,
+   "total_return_pct": -99.97380075795573,
+   "sharpe": -8.883298012944376,
+   "sortino": -11.186082504525668,
+   "max_drawdown_pct": 99.974951939028,
+   "profit_factor": 0.6784903354126385,
+   "win_rate_pct": 28.33823049298074
+  }
+ },
+ {
+  "genome_id": "9bb3800e4996",
+  "genome": {
+   "signal_type": "vol_regime_breakout",
+   "atr_window": 26,
+   "expansion_factor": 1.3336928229723424,
+   "breakout_lookback": 24,
+   "holding_bars": 2,
+   "size_pct": 0.1274173618280078,
+   "regime_filter": "low_only",
+   "genome_id": "9bb3800e4996",
+   "name": "vol_regime_9bb3800e4996"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "ZERO_TRADES_BUG",
+  "metrics": {
+   "total_trades": 0,
+   "total_return_pct": 0.0,
+   "sharpe": 0.0,
+   "sortino": 0.0,
+   "max_drawdown_pct": 0.0,
+   "profit_factor": 0.0,
+   "win_rate_pct": 0.0
+  }
+ },
+ {
+  "genome_id": "82aea7331465",
+  "genome": {
+   "signal_type": "multi_asset_momentum",
+   "confirmation_asset": "ETH/USDT",
+   "primary_asset": "BTC/USDT",
+   "lookback_bars": 87,
+   "momentum_threshold": 0.02866162362582944,
+   "require_confirmation": true,
+   "holding_bars": 14,
+   "size_pct": 0.2020796436870983,
+   "genome_id": "82aea7331465",
+   "name": "multi_asse_82aea7331465"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 913,
+   "total_return_pct": -22.210890331189695,
+   "sharpe": -0.5803483541921144,
+   "sortino": -0.7977673874297454,
+   "max_drawdown_pct": 26.38147069876675,
+   "profit_factor": 0.8908254821136438,
+   "win_rate_pct": 43.921139101861996
+  }
+ },
+ {
+  "genome_id": "ee1bfab87f88",
+  "genome": {
+   "signal_type": "funding_trend",
+   "funding_ma_window": 24,
+   "trend_threshold": 0.015023334202467053,
+   "price_confirm": false,
+   "holding_bars": 4,
+   "size_pct": 0.9238589337103236,
+   "genome_id": "ee1bfab87f88",
+   "name": "funding_tr_ee1bfab87f88"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 1668,
+   "total_return_pct": -99.23354849764033,
+   "sharpe": -2.8539969659625477,
+   "sortino": -3.7918127316553343,
+   "max_drawdown_pct": 99.24354203153302,
+   "profit_factor": 0.4944140880607209,
+   "win_rate_pct": 40.04796163069545
+  }
+ },
+ {
+  "genome_id": "5257df18ea22",
+  "genome": {
+   "signal_type": "funding_rate_contrarian",
+   "long_threshold": -0.01490271957965356,
+   "short_threshold": 0.013845662552718772,
+   "holding_bars": 4,
+   "size_pct": 0.8398919174793349,
+   "exit_type": "funding_flip",
+   "genome_id": "5257df18ea22",
+   "name": "funding_ra_5257df18ea22"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_TRADE_COUNT",
+  "metrics": {
+   "total_trades": 46,
+   "total_return_pct": -64.25392803833226,
+   "sharpe": 0.3903892009210357,
+   "sortino": 1.4883830243572773,
+   "max_drawdown_pct": 161.4940875878758,
+   "profit_factor": 0.6118483037087157,
+   "win_rate_pct": 62.22222222222222
+  }
+ },
+ {
+  "genome_id": "2e94c59f2208",
+  "genome": {
+   "signal_type": "spread_zscore",
+   "asset_a": "BTC/USDT",
+   "asset_b": "ETH/USDT",
+   "zscore_window": 68,
+   "entry_zscore": 2.0247880699184644,
+   "exit_zscore": 0.046085636281658626,
+   "size_pct": 0.16808112446482004,
+   "direction": "momentum",
+   "genome_id": "2e94c59f2208",
+   "name": "spread_zsc_2e94c59f2208"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "WALK_FORWARD",
+  "failure_reason": "FAILED_OOS_CONSISTENCY",
+  "metrics": {
+   "total_trades": 197,
+   "total_return_pct": 2.1342559262564302,
+   "sharpe": 0.2688632449764794,
+   "sortino": 0.38179145960279626,
+   "max_drawdown_pct": 4.366325260944386,
+   "profit_factor": 1.0898378705630174,
+   "win_rate_pct": 32.99492385786802,
+   "oos_sharpe": -1.4207380799930653,
+   "oos_positive_splits": 0
+  }
+ },
+ {
+  "genome_id": "f22b576efe36",
+  "genome": {
+   "signal_type": "har_regime_sized",
+   "base_signal": "reversion",
+   "entry_regime": "medium",
+   "har_window": 22,
+   "breakout_multiplier": 2.1349475544952288,
+   "size_formula": "fixed",
+   "holding_bars": 1,
+   "genome_id": "f22b576efe36",
+   "name": "har_regime_f22b576efe36"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 2184,
+   "total_return_pct": -99.60464432241842,
+   "sharpe": -6.0993962054961015,
+   "sortino": -8.26429116264552,
+   "max_drawdown_pct": 99.6315421195743,
+   "profit_factor": 0.7045914267210164,
+   "win_rate_pct": 28.617216117216117
+  }
+ },
+ {
+  "genome_id": "d3dffb571741",
+  "genome": {
+   "signal_type": "vol_regime_breakout",
+   "atr_window": 27,
+   "expansion_factor": 2.467225756470741,
+   "breakout_lookback": 21,
+   "holding_bars": 7,
+   "size_pct": 0.8926673558354428,
+   "regime_filter": "any",
+   "genome_id": "d3dffb571741",
+   "name": "vol_regime_d3dffb571741"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_TRADE_COUNT",
+  "metrics": {
+   "total_trades": 10,
+   "total_return_pct": -20.4799489947275,
+   "sharpe": -0.8192781984878101,
+   "sortino": -1.020939779193269,
+   "max_drawdown_pct": 23.854750618750124,
+   "profit_factor": 0.194104549570825,
+   "win_rate_pct": 30.0
+  }
+ },
+ {
+  "genome_id": "63fed84dfb72",
+  "genome": {
+   "signal_type": "multi_asset_momentum",
+   "confirmation_asset": "ETH/USDT",
+   "primary_asset": "BTC/USDT",
+   "lookback_bars": 46,
+   "momentum_threshold": 0.03601688827292531,
+   "require_confirmation": false,
+   "holding_bars": 8,
+   "size_pct": 0.1956796241802492,
+   "genome_id": "63fed84dfb72",
+   "name": "multi_asse_63fed84dfb72"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 1180,
+   "total_return_pct": -39.192451549326265,
+   "sharpe": -1.290161271441731,
+   "sortino": -1.7784986713754352,
+   "max_drawdown_pct": 42.36130586570253,
+   "profit_factor": 0.833690933053423,
+   "win_rate_pct": 44.74576271186441
+  }
+ },
+ {
+  "genome_id": "52df868d13df",
+  "genome": {
+   "signal_type": "funding_trend",
+   "funding_ma_window": 24,
+   "trend_threshold": 0.011379418511527857,
+   "price_confirm": true,
+   "holding_bars": 9,
+   "size_pct": 0.5199231095152502,
+   "genome_id": "52df868d13df",
+   "name": "funding_tr_52df868d13df"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 734,
+   "total_return_pct": -70.8759964467503,
+   "sharpe": -1.6272827163140808,
+   "sortino": -2.257881980041082,
+   "max_drawdown_pct": 70.95607676381454,
+   "profit_factor": 0.6901293048823107,
+   "win_rate_pct": 38.69209809264305
+  }
+ },
+ {
+  "genome_id": "9c529218c271",
+  "genome": {
+   "signal_type": "funding_rate_contrarian",
+   "long_threshold": -0.018521087460895008,
+   "short_threshold": 0.04680255967198846,
+   "holding_bars": 16,
+   "size_pct": 0.9490845046595167,
+   "exit_type": "fixed_hold",
+   "genome_id": "9c529218c271",
+   "name": "funding_ra_9c529218c271"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 240,
+   "total_return_pct": -6.773673424516856,
+   "sharpe": 0.10724803175540287,
+   "sortino": 0.16101665402921744,
+   "max_drawdown_pct": 59.370643388294184,
+   "profit_factor": 0.9797585042309815,
+   "win_rate_pct": 50.416666666666664
+  }
+ },
+ {
+  "genome_id": "5cb50a43107f",
+  "genome": {
+   "signal_type": "spread_zscore",
+   "asset_a": "BTC/USDT",
+   "asset_b": "ETH/USDT",
+   "zscore_window": 44,
+   "entry_zscore": 1.9604372693906822,
+   "exit_zscore": 0.39023443821903825,
+   "size_pct": 0.9886497216647517,
+   "direction": "mean_revert",
+   "genome_id": "5cb50a43107f",
+   "name": "spread_zsc_5cb50a43107f"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 391,
+   "total_return_pct": -84.11155053247478,
+   "sharpe": -3.957510121391621,
+   "sortino": -5.414696642551553,
+   "max_drawdown_pct": 85.55690848819525,
+   "profit_factor": 0.3581978505313396,
+   "win_rate_pct": 37.851662404092075
+  }
+ },
+ {
+  "genome_id": "81f48a00bd2f",
+  "genome": {
+   "signal_type": "har_regime_sized",
+   "base_signal": "reversion",
+   "entry_regime": "medium",
+   "har_window": 22,
+   "breakout_multiplier": 1.7371921052152435,
+   "size_formula": "fixed",
+   "holding_bars": 9,
+   "genome_id": "81f48a00bd2f",
+   "name": "har_regime_81f48a00bd2f"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 1583,
+   "total_return_pct": -96.18408816270842,
+   "sharpe": -3.108244720347154,
+   "sortino": -4.345506423648017,
+   "max_drawdown_pct": 97.02339532631635,
+   "profit_factor": 0.7880071588125871,
+   "win_rate_pct": 36.323436512950096
+  }
+ },
+ {
+  "genome_id": "1b81112af0d0",
+  "genome": {
+   "signal_type": "vol_regime_breakout",
+   "atr_window": 50,
+   "expansion_factor": 1.2375650137939167,
+   "breakout_lookback": 20,
+   "holding_bars": 20,
+   "size_pct": 0.36506030450639493,
+   "regime_filter": "low_only",
+   "genome_id": "1b81112af0d0",
+   "name": "vol_regime_1b81112af0d0"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "ZERO_TRADES_BUG",
+  "metrics": {
+   "total_trades": 0,
+   "total_return_pct": 0.0,
+   "sharpe": 0.0,
+   "sortino": 0.0,
+   "max_drawdown_pct": 0.0,
+   "profit_factor": 0.0,
+   "win_rate_pct": 0.0
+  }
+ },
+ {
+  "genome_id": "aa959748d17b",
+  "genome": {
+   "signal_type": "multi_asset_momentum",
+   "confirmation_asset": "BTC/USDT",
+   "primary_asset": "ETH/USDT",
+   "lookback_bars": 70,
+   "momentum_threshold": 0.008727508693203746,
+   "require_confirmation": false,
+   "holding_bars": 24,
+   "size_pct": 0.4665753146922965,
+   "genome_id": "aa959748d17b",
+   "name": "multi_asse_aa959748d17b"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 969,
+   "total_return_pct": -24.702334000465985,
+   "sharpe": 0.006675754126933635,
+   "sortino": 0.009412129086142964,
+   "max_drawdown_pct": 46.1374082239286,
+   "profit_factor": 0.9611081830828764,
+   "win_rate_pct": 40.289256198347104
+  }
+ },
+ {
+  "genome_id": "5af4a771d4e1",
+  "genome": {
+   "signal_type": "funding_trend",
+   "funding_ma_window": 8,
+   "trend_threshold": 0.019458662252264065,
+   "price_confirm": true,
+   "holding_bars": 24,
+   "size_pct": 0.10850512816214067,
+   "genome_id": "5af4a771d4e1",
+   "name": "funding_tr_5af4a771d4e1"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 230,
+   "total_return_pct": -12.100676929049344,
+   "sharpe": -0.8487613854481231,
+   "sortino": -1.152243494129736,
+   "max_drawdown_pct": 12.587600120864515,
+   "profit_factor": 0.7037753353213297,
+   "win_rate_pct": 37.99126637554585
+  }
+ },
+ {
+  "genome_id": "40e7c3b33266",
+  "genome": {
+   "signal_type": "funding_rate_contrarian",
+   "long_threshold": -0.009581717948241586,
+   "short_threshold": 0.04019413828426983,
+   "holding_bars": 9,
+   "size_pct": 0.9006939568781371,
+   "exit_type": "funding_flip",
+   "genome_id": "40e7c3b33266",
+   "name": "funding_ra_40e7c3b33266"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 74,
+   "total_return_pct": -48.2315512380525,
+   "sharpe": -0.18452424115172167,
+   "sortino": -0.24229323488389912,
+   "max_drawdown_pct": 181.5093082228193,
+   "profit_factor": 0.7297771404415223,
+   "win_rate_pct": 56.16438356164384
+  }
+ },
+ {
+  "genome_id": "7b96d068c6a3",
+  "genome": {
+   "signal_type": "spread_zscore",
+   "asset_a": "BTC/USDT",
+   "asset_b": "ETH/USDT",
+   "zscore_window": 77,
+   "entry_zscore": 2.6437051600837553,
+   "exit_zscore": 0.01103809988679122,
+   "size_pct": 0.8184091200720875,
+   "direction": "mean_revert",
+   "genome_id": "7b96d068c6a3",
+   "name": "spread_zsc_7b96d068c6a3"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 110,
+   "total_return_pct": -45.99565521268844,
+   "sharpe": -1.298932164741032,
+   "sortino": -1.815436806067575,
+   "max_drawdown_pct": 49.95901183851593,
+   "profit_factor": 0.47545225223724014,
+   "win_rate_pct": 52.72727272727272
+  }
+ },
+ {
+  "genome_id": "70a1d8cc5688",
+  "genome": {
+   "signal_type": "har_regime_sized",
+   "base_signal": "reversion",
+   "entry_regime": "low",
+   "har_window": 22,
+   "breakout_multiplier": 1.6550827369147922,
+   "size_formula": "fixed",
+   "holding_bars": 8,
+   "genome_id": "70a1d8cc5688",
+   "name": "har_regime_70a1d8cc5688"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 3064,
+   "total_return_pct": -99.9754362668105,
+   "sharpe": -8.723367909679,
+   "sortino": -10.930727651210654,
+   "max_drawdown_pct": 99.97730654128456,
+   "profit_factor": 0.687333319281989,
+   "win_rate_pct": 28.305582761998043
+  }
+ },
+ {
+  "genome_id": "c82d3b0cafdc",
+  "genome": {
+   "signal_type": "vol_regime_breakout",
+   "atr_window": 28,
+   "expansion_factor": 1.823202319323349,
+   "breakout_lookback": 33,
+   "holding_bars": 15,
+   "size_pct": 0.9662183334916654,
+   "regime_filter": "low_only",
+   "genome_id": "c82d3b0cafdc",
+   "name": "vol_regime_c82d3b0cafdc"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "ZERO_TRADES_BUG",
+  "metrics": {
+   "total_trades": 0,
+   "total_return_pct": 0.0,
+   "sharpe": 0.0,
+   "sortino": 0.0,
+   "max_drawdown_pct": 0.0,
+   "profit_factor": 0.0,
+   "win_rate_pct": 0.0
+  }
+ },
+ {
+  "genome_id": "ad273af1698d",
+  "genome": {
+   "signal_type": "multi_asset_momentum",
+   "confirmation_asset": "BTC/USDT",
+   "primary_asset": "ETH/USDT",
+   "lookback_bars": 50,
+   "momentum_threshold": 0.015557488131727366,
+   "require_confirmation": false,
+   "holding_bars": 22,
+   "size_pct": 0.8262744209169135,
+   "genome_id": "ad273af1698d",
+   "name": "multi_asse_ad273af1698d"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 935,
+   "total_return_pct": 5.944059338584229,
+   "sharpe": 0.47849471357634477,
+   "sortino": 0.6802635502117248,
+   "max_drawdown_pct": 63.168049380056026,
+   "profit_factor": 1.0051263021335604,
+   "win_rate_pct": 43.101604278074866
+  }
+ },
+ {
+  "genome_id": "2a99ab9f900f",
+  "genome": {
+   "signal_type": "funding_trend",
+   "funding_ma_window": 7,
+   "trend_threshold": 0.004185924824416539,
+   "price_confirm": true,
+   "holding_bars": 11,
+   "size_pct": 0.9451956784669147,
+   "genome_id": "2a99ab9f900f",
+   "name": "funding_tr_2a99ab9f900f"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 1605,
+   "total_return_pct": -99.50327663599447,
+   "sharpe": -2.706284065315449,
+   "sortino": -3.694991991396121,
+   "max_drawdown_pct": 99.57017774941188,
+   "profit_factor": 0.7335649257916811,
+   "win_rate_pct": 37.96758104738154
+  }
+ },
+ {
+  "genome_id": "5627e72b9e78",
+  "genome": {
+   "signal_type": "funding_rate_contrarian",
+   "long_threshold": -0.017822918027358768,
+   "short_threshold": 0.04876603827793768,
+   "holding_bars": 6,
+   "size_pct": 0.42765317000415715,
+   "exit_type": "fixed_hold",
+   "genome_id": "5627e72b9e78",
+   "name": "funding_ra_5627e72b9e78"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 517,
+   "total_return_pct": -25.76121872596549,
+   "sharpe": -0.48839489246998896,
+   "sortino": -0.7251403910507305,
+   "max_drawdown_pct": 34.530894626393646,
+   "profit_factor": 0.8601265799652502,
+   "win_rate_pct": 44.680851063829785
+  }
+ },
+ {
+  "genome_id": "8131d8fe750a",
+  "genome": {
+   "signal_type": "spread_zscore",
+   "asset_a": "BTC/USDT",
+   "asset_b": "ETH/USDT",
+   "zscore_window": 76,
+   "entry_zscore": 2.3130496203567508,
+   "exit_zscore": 0.3699039862945867,
+   "size_pct": 0.2940067896456276,
+   "direction": "mean_revert",
+   "genome_id": "8131d8fe750a",
+   "name": "spread_zsc_8131d8fe750a"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 193,
+   "total_return_pct": -29.050654555792477,
+   "sharpe": -2.625545451584852,
+   "sortino": -3.603997997178155,
+   "max_drawdown_pct": 29.73443334483512,
+   "profit_factor": 0.31700715391062817,
+   "win_rate_pct": 47.15025906735752
+  }
+ },
+ {
+  "genome_id": "1111272d5c63",
+  "genome": {
+   "signal_type": "har_regime_sized",
+   "base_signal": "breakout",
+   "entry_regime": "medium",
+   "har_window": 22,
+   "breakout_multiplier": 2.147261158285019,
+   "size_formula": "inverse_vol",
+   "holding_bars": 8,
+   "genome_id": "1111272d5c63",
+   "name": "har_regime_1111272d5c63"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 1581,
+   "total_return_pct": -99.56593049783197,
+   "sharpe": -6.860978139425246,
+   "sortino": -9.421010645009508,
+   "max_drawdown_pct": 99.5846726370471,
+   "profit_factor": 0.4786311324906903,
+   "win_rate_pct": 19.924098671726757
+  }
+ },
+ {
+  "genome_id": "4addbabcba65",
+  "genome": {
+   "signal_type": "vol_regime_breakout",
+   "atr_window": 10,
+   "expansion_factor": 1.3754807031830611,
+   "breakout_lookback": 16,
+   "holding_bars": 17,
+   "size_pct": 0.23070788822198265,
+   "regime_filter": "low_only",
+   "genome_id": "4addbabcba65",
+   "name": "vol_regime_4addbabcba65"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "ZERO_TRADES_BUG",
+  "metrics": {
+   "total_trades": 0,
+   "total_return_pct": 0.0,
+   "sharpe": 0.0,
+   "sortino": 0.0,
+   "max_drawdown_pct": 0.0,
+   "profit_factor": 0.0,
+   "win_rate_pct": 0.0
+  }
+ },
+ {
+  "genome_id": "65f5d839a36a",
+  "genome": {
+   "signal_type": "multi_asset_momentum",
+   "confirmation_asset": "ETH/USDT",
+   "primary_asset": "BTC/USDT",
+   "lookback_bars": 58,
+   "momentum_threshold": 0.019202057587031564,
+   "require_confirmation": true,
+   "holding_bars": 6,
+   "size_pct": 0.48023500266942476,
+   "genome_id": "65f5d839a36a",
+   "name": "multi_asse_65f5d839a36a"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 1886,
+   "total_return_pct": -88.68989963037154,
+   "sharpe": -2.29013868318624,
+   "sortino": -3.1446880188429054,
+   "max_drawdown_pct": 88.84073002190898,
+   "profit_factor": 0.7511563293756718,
+   "win_rate_pct": 41.35737009544008
+  }
+ },
+ {
+  "genome_id": "b2450437e40c",
+  "genome": {
+   "signal_type": "funding_trend",
+   "funding_ma_window": 23,
+   "trend_threshold": 0.005910826997321858,
+   "price_confirm": false,
+   "holding_bars": 24,
+   "size_pct": 0.430875544524422,
+   "genome_id": "b2450437e40c",
+   "name": "funding_tr_b2450437e40c"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 891,
+   "total_return_pct": -66.51212925113909,
+   "sharpe": -0.9708673530821655,
+   "sortino": -1.3283874348776146,
+   "max_drawdown_pct": 70.29323964830986,
+   "profit_factor": 0.8049183704385827,
+   "win_rate_pct": 46.51685393258427
+  }
+ },
+ {
+  "genome_id": "8c756ee0c71e",
+  "genome": {
+   "signal_type": "funding_rate_contrarian",
+   "long_threshold": -0.015296626208077868,
+   "short_threshold": 0.021757829571126992,
+   "holding_bars": 4,
+   "size_pct": 0.4678689495976578,
+   "exit_type": "fixed_hold",
+   "genome_id": "8c756ee0c71e",
+   "name": "funding_ra_8c756ee0c71e"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 1250,
+   "total_return_pct": -68.61476587901097,
+   "sharpe": -1.4953650880423237,
+   "sortino": -2.3277633025198696,
+   "max_drawdown_pct": 72.32182808953641,
+   "profit_factor": 0.7426797939846721,
+   "win_rate_pct": 38.51080864691753
+  }
+ },
+ {
+  "genome_id": "5799b378be74",
+  "genome": {
+   "signal_type": "spread_zscore",
+   "asset_a": "BTC/USDT",
+   "asset_b": "ETH/USDT",
+   "zscore_window": 47,
+   "entry_zscore": 1.824645886138835,
+   "exit_zscore": 0.16621098568494425,
+   "size_pct": 0.3626516827390489,
+   "direction": "mean_revert",
+   "genome_id": "5799b378be74",
+   "name": "spread_zsc_5799b378be74"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 361,
+   "total_return_pct": -46.62800039941206,
+   "sharpe": -3.5391515654124692,
+   "sortino": -4.8925609455988885,
+   "max_drawdown_pct": 47.60939736593549,
+   "profit_factor": 0.35457559185432097,
+   "win_rate_pct": 37.95013850415512
+  }
+ },
+ {
+  "genome_id": "4ee5452ba153",
+  "genome": {
+   "signal_type": "har_regime_sized",
+   "base_signal": "breakout",
+   "entry_regime": "medium",
+   "har_window": 5,
+   "breakout_multiplier": 2.999846997726438,
+   "size_formula": "fixed",
+   "holding_bars": 3,
+   "genome_id": "4ee5452ba153",
+   "name": "har_regime_4ee5452ba153"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 1818,
+   "total_return_pct": -99.91767596038741,
+   "sharpe": -7.364508455535297,
+   "sortino": -9.875024376341344,
+   "max_drawdown_pct": 99.91833630046538,
+   "profit_factor": 0.576872388703752,
+   "win_rate_pct": 20.9020902090209
+  }
+ },
+ {
+  "genome_id": "6a8d57de1f3c",
+  "genome": {
+   "signal_type": "vol_regime_breakout",
+   "atr_window": 24,
+   "expansion_factor": 2.0834159916597477,
+   "breakout_lookback": 45,
+   "holding_bars": 6,
+   "size_pct": 0.6278305595692039,
+   "regime_filter": "any",
+   "genome_id": "6a8d57de1f3c",
+   "name": "vol_regime_6a8d57de1f3c"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_TRADE_COUNT",
+  "metrics": {
+   "total_trades": 17,
+   "total_return_pct": -25.719274812073127,
+   "sharpe": -1.2680155264460142,
+   "sortino": -1.5127500044858209,
+   "max_drawdown_pct": 28.022730461427887,
+   "profit_factor": 0.14462103427084058,
+   "win_rate_pct": 29.411764705882355
+  }
+ },
+ {
+  "genome_id": "16cc865dbf55",
+  "genome": {
+   "signal_type": "multi_asset_momentum",
+   "confirmation_asset": "ETH/USDT",
+   "primary_asset": "BTC/USDT",
+   "lookback_bars": 34,
+   "momentum_threshold": 0.046291553309400386,
+   "require_confirmation": false,
+   "holding_bars": 13,
+   "size_pct": 0.3400760631018831,
+   "genome_id": "16cc865dbf55",
+   "name": "multi_asse_16cc865dbf55"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 602,
+   "total_return_pct": -42.07721931636006,
+   "sharpe": -0.7553511852725756,
+   "sortino": -1.0393777796195354,
+   "max_drawdown_pct": 45.31527684578439,
+   "profit_factor": 0.8354312908140835,
+   "win_rate_pct": 45.01661129568107
+  }
+ },
+ {
+  "genome_id": "a379ec41c2cc",
+  "genome": {
+   "signal_type": "funding_trend",
+   "funding_ma_window": 3,
+   "trend_threshold": 0.015525379216180399,
+   "price_confirm": true,
+   "holding_bars": 6,
+   "size_pct": 0.8119797766121766,
+   "genome_id": "a379ec41c2cc",
+   "name": "funding_tr_a379ec41c2cc"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 667,
+   "total_return_pct": -89.61321131078317,
+   "sharpe": -2.219866408501304,
+   "sortino": -2.9131072748926656,
+   "max_drawdown_pct": 89.66729133302181,
+   "profit_factor": 0.6073473205211071,
+   "win_rate_pct": 38.88888888888889
+  }
+ },
+ {
+  "genome_id": "2804aebe61a1",
+  "genome": {
+   "signal_type": "funding_rate_contrarian",
+   "long_threshold": -0.007924591472111693,
+   "short_threshold": 0.04079624689840105,
+   "holding_bars": 1,
+   "size_pct": 0.608288038421768,
+   "exit_type": "funding_flip",
+   "genome_id": "2804aebe61a1",
+   "name": "funding_ra_2804aebe61a1"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "SCREENING",
+  "failure_reason": "LOW_PROFIT_FACTOR",
+  "metrics": {
+   "total_trades": 92,
+   "total_return_pct": -6.271900484912931,
+   "sharpe": -0.0848275826334334,
+   "sortino": -0.1097220333018641,
+   "max_drawdown_pct": 126.53664183902617,
+   "profit_factor": 0.9435729795093695,
+   "win_rate_pct": 52.74725274725275
+  }
+ },
+ {
+  "genome_id": "63b8d96677e2",
+  "genome": {
+   "signal_type": "spread_zscore",
+   "asset_a": "BTC/USDT",
+   "asset_b": "ETH/USDT",
+   "zscore_window": 104,
+   "entry_zscore": 1.9590918979715615,
+   "exit_zscore": 0.15136459091123833,
+   "size_pct": 0.27429333687986657,
+   "direction": "momentum",
+   "genome_id": "63b8d96677e2",
+   "name": "spread_zsc_63b8d96677e2"
+  },
+  "passed_all_gates": false,
+  "gate_failed": "WALK_FORWARD",
+  "failure_reason": "FAILED_OOS_CONSISTENCY",
+  "metrics": {
+   "total_trades": 157,
+   "total_return_pct": 10.668755662139064,
+   "sharpe": 0.7919144294171241,
+   "sortino": 1.136864850466396,
+   "max_drawdown_pct": 6.747984058119655,
+   "profit_factor": 1.3435164631662628,
+   "win_rate_pct": 31.84713375796178,
+   "oos_sharpe": -1.0665623643895448,
+   "oos_positive_splits": 1
+  }
+ }
+]
