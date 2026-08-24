@@ -1,2 +1,5 @@
-# Fetched candle cache (regenerated on demand, never committed)
-*.csv
+# Allow specific research CSV files
+*
+!BTCUSDT_1h_730d.csv
+!ETHUSDT_1h_730d.csv
+!.gitignore
