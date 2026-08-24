@@ -115,9 +115,8 @@ def apply_migration(conn, columns: Iterable[Tuple[str, str]] = PHASE9A_COLUMNS) 
 
 def _connect(db_url: str):
     import psycopg  # type: ignore
-    from psycopg.rows import dict_row  # type: ignore
 
-    conn = psycopg.connect(db_url, row_factory=dict_row)
+    conn = psycopg.connect(db_url)
     return conn
 
 
@@ -148,7 +147,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         # Postgres: one transaction, rollback on any error. SQLite: autocommit DDL.
         is_pg = not isinstance(conn, sqlite3.Connection)
         if is_pg:
-            conn.autocommit = False
+            pass
         try:
             added, skipped = apply_migration(conn)
             if is_pg:
@@ -163,7 +162,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         assert before == after, (
             f"row count changed during migration: {before} -> {after}")
     except Exception as exc:
-        _log(f"ERROR: migration failed: {exc}")
+        import traceback
+        _log(f"ERROR: migration failed: {exc}\n{traceback.format_exc()}")
         try:
             conn.close()
         except Exception:

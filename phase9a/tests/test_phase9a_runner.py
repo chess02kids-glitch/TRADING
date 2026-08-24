@@ -73,7 +73,7 @@ class TestMain:
         captured = capsys.readouterr()
         assert rc == 0
         assert "VERDICT: SIGNAL FOUND" in captured.out
-        assert out.exists() and "SIGNAL FOUND" in out.read_text()
+        assert out.exists() and "SIGNAL FOUND" in out.read_text(encoding="utf-8")
 
     def test_main_not_enough_data(self, tmp_path, capsys):
         path, _ = _csv(tmp_path, n_each=5, hit=True)  # 5 each < 30

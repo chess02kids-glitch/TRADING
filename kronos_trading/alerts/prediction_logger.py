@@ -124,8 +124,8 @@ _SELECT_ALL = f"SELECT {', '.join(_COLUMNS)} FROM har_predictions"
 class DBWrapper:
     def __init__(self, db_path):
         self.url = os.environ.get("SUPABASE_DB_URL")
-        self.is_pg = bool(self.url)
-        if self.is_pg:
+        self.is_pg = bool(self.url) and str(db_path) == DEFAULT_DB_PATH
+        if self.url and self.is_pg:
             self.url = self.url.strip("\"'")
             if not self.url.startswith("postgres://") and not self.url.startswith("postgresql://"):
                 self.url = "postgresql://" + self.url
@@ -140,6 +140,7 @@ class DBWrapper:
                 keepalives_count=3
             )
         else:
+            self.is_pg = False
             self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
             self.conn.row_factory = sqlite3.Row
             self.conn.execute("PRAGMA journal_mode=WAL;").fetchall()
@@ -199,7 +200,7 @@ def _upgrade_schema(db_path: str) -> None:
                 pass
 
 def initialize_db(db_path: str = DEFAULT_DB_PATH) -> None:
-    if not os.environ.get("SUPABASE_DB_URL"):
+    if not (os.environ.get("SUPABASE_DB_URL") and str(db_path) == DEFAULT_DB_PATH):
         path = Path(str(db_path))
         path.parent.mkdir(parents=True, exist_ok=True)
         with closing(_connect(path)) as conn:

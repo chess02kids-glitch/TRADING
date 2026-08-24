@@ -97,11 +97,15 @@ def test_get_db_url_from_env(monkeypatch):
 
 def test_get_db_url_none_when_missing(monkeypatch):
     monkeypatch.delenv("SUPABASE_DB_URL", raising=False)
+    import sys
+    monkeypatch.setitem(sys.modules, "streamlit", None)
     assert get_db_url() is None
 
 
 def test_fetch_predictions_empty_no_url(monkeypatch):
     monkeypatch.delenv("SUPABASE_DB_URL", raising=False)
+    import sys
+    monkeypatch.setitem(sys.modules, "streamlit", None)
     df = fetch_predictions()
     assert isinstance(df, pd.DataFrame)
     assert df.empty
@@ -283,6 +287,8 @@ def test_fetch_predictions_handles_exception(monkeypatch):
 
 def test_fetch_breakouts_empty_no_url(monkeypatch):
     monkeypatch.delenv("SUPABASE_DB_URL", raising=False)
+    import sys
+    monkeypatch.setitem(sys.modules, "streamlit", None)
     df = fetch_breakouts()
     assert isinstance(df, pd.DataFrame)
     assert df.empty

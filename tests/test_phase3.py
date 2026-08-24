@@ -237,6 +237,13 @@ def test_prediction_has_required_structured_keys():
         assert k in d, k
 
 
+try:
+    import torch
+    torch_available = True
+except ImportError:
+    torch_available = False
+
+@pytest.mark.skipif(not torch_available, reason="torch not installed")
 def test_real_adapter_wiring_with_stub_upstream():
     """Exercise the real-predictor adapter against the upstream call contract.
 

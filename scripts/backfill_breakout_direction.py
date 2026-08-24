@@ -227,8 +227,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         import psycopg  # type: ignore
-        from psycopg.rows import dict_row  # type: ignore
-        conn = psycopg.connect(url, row_factory=dict_row)
+        conn = psycopg.connect(url)
     except Exception as exc:
         _log(f"ERROR: connection failed: {exc}")
         return 1

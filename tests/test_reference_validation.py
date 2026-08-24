@@ -67,6 +67,13 @@ def test_inputs_have_expected_shapes_and_columns():
     assert str(ref_y.iloc[0]) == str(our_y.iloc[0].tz_localize(None))
 
 
+try:
+    import torch
+    torch_available = True
+except ImportError:
+    torch_available = False
+
+@pytest.mark.skipif(not torch_available, reason="torch not installed")
 def test_contract_comparison_matches_except_amount():
     report = run_contract_comparison(512, 8)
     assert report["status"] == "ok"
@@ -94,7 +101,7 @@ def test_amount_channel_is_derived_proxy():
     assert summary["mean_abs_diff"] > 0
     assert summary["mean_rel_diff"] > 0
 
-
+@pytest.mark.skipif(not torch_available, reason="torch not installed")
 def test_reference_kwargs_match_regression_recipe():
     report = run_contract_comparison(512, 8)
     assert report["temperature"] == 1.0
@@ -105,7 +112,7 @@ def test_reference_kwargs_match_regression_recipe():
     assert report["model_revision"] == REFERENCE_MODEL_REVISION
     assert report["tokenizer_revision"] == REFERENCE_TOKENIZER_REVISION
 
-
+@pytest.mark.skipif(not torch_available, reason="torch not installed")
 def test_validation_report_structure_and_verdict_without_weights():
     report = build_validation_report(None, 512, 8)
     assert report["kind"] == "reference_pipeline_validation"

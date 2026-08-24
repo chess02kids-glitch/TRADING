@@ -1,0 +1,3 @@
+sandbox: true
+minimum_har_volatility: 0.001
+max_portfolio_percent: 10.0
