@@ -52,3 +52,26 @@ crypto mean reversion is structurally broken - it also fails on the cross-asset 
 - Supabase unreachable from this sandbox (no SUPABASE_DB_URL / network allowlist): every row was written one-by-one to the SQLite mirror data/research_generations.sqlite (identical schema to supabase/007_lab_schema.sql) and research/results/log.jsonl. supabase/007_lab_schema.sql applies the same table/columns (ADD COLUMN IF NOT EXISTS, nothing dropped) when credentials exist.
 - Engine: vectorbt 1.1.0, certified by agent/certify_engine.py (7/7 tests incl. size_type='percent' sizing and same-bar close execution). Zero-trades guard is the first check in Gate 1.
 - Gate 5 in Gen 3 used the same pre-registered stability parameters; only min_trades was loosened (documented above).
+
+## Generation 4 Update
+| Gen | Genomes | Survivors | Best Sharpe | Primary Gate |
+|---|---:|---:|---:|---|
+| 4 | 50 | 0 | 0.41 | SCREENING |
+| TOTAL | 230 | 0 | 1.55 | |
+
+| Signal Type | Status | Evidence |
+|---|---|---|
+| spread momentum | OPEN — mechanics validation required | 2024–26: 2/40 passed screening; both failed concentration. Current single-leg proxy did not implement actual partial closes. |
+| multi_asset_momentum | CLOSED for this local stability neighborhood | 0/10 dbf438 lookback variants passed Gate 5. |
+
+## Generation 5 Update
+| Gen | Genomes | Survivors | Best Sharpe | Primary Gate |
+|---|---:|---:|---:|---|
+| 5 | 50 | 0 | 0.19 | SCREENING |
+| TOTAL | 280 | 0 | 1.55 | |
+
+- **Two-leg spread:** CLOSED. All 20 honest two-leg simulations failed Gate 1; the three manual-PnL fixtures passed.
+- **Realized-vol regime:** CLOSED in this parameter space; 2/10 reached Gate 2 but failed OOS.
+- **Open-interest delta:** Inconclusive / closed for OI-proxy implementation; 0/10 trades. Do not infer real-OI results from volume proxy.
+- **Liquidation bounce:** CLOSED in this parameter space; 0/10 trades under the sampled event thresholds.
+- **Research status:** STOP RULE TRIGGERED. Do not launch Gen 6 without new data or HAR-calibration evidence.

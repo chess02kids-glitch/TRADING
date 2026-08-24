@@ -67,7 +67,7 @@ def run_regime_analysis(
         fees=0.001,
         slippage=0.001,
         init_cash=10000.0
-    )
+    , upon_opposite_entry="Ignore")
     
     returns = portfolio.returns()
     

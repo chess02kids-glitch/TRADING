@@ -48,7 +48,7 @@ def run_walk_forward(
                 size_type="percent",
                 freq="1h",
                 init_cash=10000.0
-            )
+            , upon_opposite_entry="Ignore")
             stats = portfolio.stats()
             ret = float(stats.get("Total Return [%]", 0.0))
             sharpe = float(stats.get("Sharpe Ratio", 0.0))

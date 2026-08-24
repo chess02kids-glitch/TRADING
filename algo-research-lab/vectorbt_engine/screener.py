@@ -26,7 +26,7 @@ def run_fast_screen(
         freq="1h",
         init_cash=10000.0,
         reject_prob=0.0
-    )
+    , upon_opposite_entry="Ignore")
     
     stats = portfolio.stats()
     
