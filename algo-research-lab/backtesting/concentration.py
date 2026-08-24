@@ -23,7 +23,7 @@ def run_concentration_analysis(
         fees=0.001,
         slippage=0.001,
         init_cash=10000.0
-    )
+    , upon_opposite_entry="Ignore")
     
     trades = portfolio.trades.records_readable
     if len(trades) == 0:

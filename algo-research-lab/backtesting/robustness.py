@@ -36,7 +36,7 @@ def run_cost_stress_test(
             fees=f,
             slippage=s,
             init_cash=10000.0
-        )
+        , upon_opposite_entry="Ignore")
         
         stats = portfolio.stats()
         ret = float(stats.get("Total Return [%]", 0.0))
@@ -103,7 +103,7 @@ def run_parameter_stability_test(
                     
                 portfolio = vbt.Portfolio.from_signals(
                     close, entries, exits, size=sizes, size_type="percent", freq="1h", init_cash=10000.0, fees=0.001, slippage=0.001
-                )
+                , upon_opposite_entry="Ignore")
                 
                 stats = portfolio.stats()
                 sharpe = float(stats.get("Sharpe Ratio", 0.0))
