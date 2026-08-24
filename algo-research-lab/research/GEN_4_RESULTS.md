@@ -2,7 +2,7 @@
 
 ## Status
 
-**Generation 4 did not start. Zero genomes were generated or evaluated.** This is an intentional validation stop, not a failed 50-genome run. The stated Gen 4 requirement is recent 2024–2026 BTC/USDT and ETH/USDT hourly data (plus aligned funding). The repository data available to this session ends before 2024, and the exchange/API endpoints cannot be reached from this sandbox.
+**Generation 4 did not start. Zero genomes were generated or evaluated.** This is an intentional validation stop, not a failed 50-genome run. The stated Gen 4 requirement is recent 2024–2026 BTC/USDT and ETH/USDT hourly data (plus aligned funding). The explicitly permitted primary cache files are absent from this checkout, the repository data available to this session ends before 2024, and the exchange/API endpoints cannot be reached from this sandbox.
 
 No gate was changed, loosened, or bypassed. No forbidden directory was read, modified, or used as a data source.
 
@@ -14,6 +14,7 @@ No data was used for a Gen 4 backtest.
 |---|---|
 | Assets | BTC/USDT + ETH/USDT |
 | Required date range | Recent 2024–2026, last 730 days |
+| Required primary cache | `sandbox/pattern_research/cache/BTCUSDT_1h_730d.csv` and `ETHUSDT_1h_730d.csv`: **not present** (the cache contains only `.gitignore`) |
 | Available local aligned spot range | 2017-08-17 to 2019-11-04 |
 | Available later price range | 2019-12-01 to 2023-12-31 (BTC/USD Bitstamp; not BTC/USDT + ETH/USDT) |
 | Available funding range | 2020-01-01 to 2023-12-31 |
@@ -21,11 +22,11 @@ No data was used for a Gen 4 backtest.
 | Source accepted for Gen 4 | None |
 | Bars accepted for Gen 4 | 0 |
 
-The local `data/cache/MANIFEST.json` records the relevant latest endpoints as 2023-12-31 23:00 UTC for price and funding. Therefore the mandatory data-recency check failed. The required fallback location was not accessed because the Gen 4 instructions explicitly prohibit touching `sandbox/pattern_research/`.
+The local `data/cache/MANIFEST.json` records the relevant latest endpoints as 2023-12-31 23:00 UTC for price and funding. The now-permitted primary cache directory was read-only inspected; its required CSVs are absent. Therefore the mandatory data-recency check failed. No file under `sandbox/pattern_research/` was modified.
 
 ## Pre-run Validation Checks
 
-1. **Data recency — FAIL / STOP.** Available repository data is pre-2024. No recent cache that may reside in a forbidden directory was accessed. The Gen 4 backtest must not run on this historical data.
+1. **Data recency — FAIL / STOP.** The explicitly permitted recent CSVs are absent; available repository data is pre-2024. The Gen 4 backtest must not run on this historical data.
 2. **Zero-trades protection — PASS.** `research/screener.py::gate1_screening` checks `total_trades == 0` first and returns `ZERO_TRADES_BUG` before any other screening metric.
 3. **`size_type="percent"` — PASS after remediation.** Every `vbt.Portfolio.from_signals` call under `algo-research-lab/` now explicitly includes `size_type="percent"`, including the certification harness. The Gen 4 pipeline already used this mode through `research/screener.py::simulate`.
 4. **No lookahead in spread calculation — NOT EXECUTED ON RECENT DATA.** The existing spread implementation uses rolling mean/std only; no future window is used. A Gen-4-specific timestamp assertion could not be executed because its required recent BTC/ETH data is unavailable.
