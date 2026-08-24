@@ -1,0 +1,67 @@
+=== GATE LOOSENED (documented): screening.min_total_trades: 50 -> 30 ===
+=== DATA VERIFICATION ===
+Window A  BTC/USDT 1h OHLCV : 19414 rows  2017-08-17 04:00:00+00:00 -> 2019-11-04 01:00:00+00:00
+Window A  ETH/USDT 1h OHLCV : 19414 rows  (aligned grid)
+Window B  BTC price 1h      : 35808 rows  2019-12-01 00:00:00+00:00 -> 2023-12-31 23:00:00+00:00
+Funding   BTCUSDT 8h events : 4383 rows -> hourly merged/shifted
+HAR predicted range variants: ['22', '5'] (regime counts: 5: {'low': np.int64(8522), 'medium': np.int64(7087), 'high': np.int64(3805)}, 22: {'low': np.int64(8486), 'medium': np.int64(7100), 'high': np.int64(3828)})
+[evolve] focused fresh batch on top types by best Sharpe: [('spread_zscore', 1.55), ('multi_asset_momentum', 0.95), ('funding_rate_contrarian', 0.7)]
+=== GENERATION 3 START ===
+Seed: 777777 | Mode: focused-fresh | Target genomes: 50
+[ResultsLogger] backend: sqlite
+[1/50] b86ad4de78b3 spread_zscore            sharpe=-0.90 pf=0.75 trades= 209 FAIL SCREENING/LOW_PROFIT_FACTOR (8.8s)
+[2/50] 0a8ecb89c679 spread_zscore            sharpe=-1.88 pf=0.29 trades=  86 FAIL SCREENING/LOW_PROFIT_FACTOR (0.6s)
+[3/50] 8747dc7bd6a1 spread_zscore            sharpe=-5.02 pf=0.34 trades= 556 FAIL SCREENING/LOW_PROFIT_FACTOR (0.7s)
+[4/50] 5804c23340a8 spread_zscore            sharpe=0.57 pf=1.44 trades=  60 FAIL CONCENTRATION/HIGH_CONCENTRATION (1.1s)
+[5/50] da1a36946a49 spread_zscore            sharpe=-1.32 pf=0.73 trades= 375 FAIL SCREENING/LOW_PROFIT_FACTOR (0.8s)
+[6/50] 7bd52120d53a spread_zscore            sharpe=-1.98 pf=0.63 trades= 413 FAIL SCREENING/LOW_PROFIT_FACTOR (0.6s)
+[7/50] f686e6f41b82 spread_zscore            sharpe=0.58 pf=1.19 trades= 168 FAIL WALK_FORWARD/FAILED_OOS_CONSISTENCY (1.0s)
+[8/50] c3b9d692e426 spread_zscore            sharpe=0.72 pf=1.47 trades=  82 FAIL WALK_FORWARD/FAILED_OOS_CONSISTENCY (1.0s)
+[9/50] b387707b19db spread_zscore            sharpe=0.40 pf=1.23 trades=  35 FAIL WALK_FORWARD/FAILED_OOS_CONSISTENCY (1.3s)
+[10/50] 12011867ef9b spread_zscore            sharpe=0.71 pf=1.37 trades= 116 FAIL CONCENTRATION/HIGH_CONCENTRATION (1.0s)
+[11/50] 7f839cea8420 spread_zscore            sharpe=-1.11 pf=0.44 trades=  45 FAIL SCREENING/LOW_PROFIT_FACTOR (0.7s)
+[12/50] 1501a056500f spread_zscore            sharpe=-2.07 pf=0.40 trades= 197 FAIL SCREENING/LOW_PROFIT_FACTOR (0.6s)
+[13/50] 059886ff6129 spread_zscore            sharpe=-5.24 pf=0.26 trades= 503 FAIL SCREENING/LOW_PROFIT_FACTOR (0.7s)
+[14/50] 3c93918485eb spread_zscore            sharpe=-0.76 pf=0.78 trades= 277 FAIL SCREENING/LOW_PROFIT_FACTOR (0.6s)
+[15/50] 82fd85eeb1b3 spread_zscore            sharpe=1.10 pf=1.59 trades= 117 FAIL CONCENTRATION/HIGH_CONCENTRATION (1.2s)
+[16/50] daa8ef00b1f4 spread_zscore            sharpe=-6.21 pf=0.30 trades= 793 FAIL SCREENING/LOW_PROFIT_FACTOR (0.6s)
+[17/50] 9e11e383775b spread_zscore            sharpe=0.54 pf=1.44 trades=  43 FAIL WALK_FORWARD/FAILED_OOS_CONSISTENCY (0.9s)
+[18/50] 430bb349e945 spread_zscore            sharpe=0.93 pf=1.42 trades= 159 FAIL WALK_FORWARD/FAILED_OOS_CONSISTENCY (0.9s)
+[19/50] 68961629192b spread_zscore            sharpe=0.67 pf=1.20 trades= 226 FAIL WALK_FORWARD/FAILED_OOS_CONSISTENCY (0.9s)
+[20/50] eb5786fc9f96 spread_zscore            sharpe=-1.17 pf=0.40 trades=  47 FAIL SCREENING/LOW_PROFIT_FACTOR (0.6s)
+[21/50] 66061c2c34ac spread_zscore            sharpe=-6.16 pf=0.35 trades= 855 FAIL SCREENING/LOW_PROFIT_FACTOR (0.8s)
+[22/50] 691a3a751bd8 spread_zscore            sharpe=-14.87 pf=0.19 trades=2259 FAIL SCREENING/LOW_PROFIT_FACTOR (0.6s)
+[23/50] e2afe4f803db multi_asset_momentum     sharpe=-5.66 pf=0.66 trades=3750 FAIL SCREENING/LOW_PROFIT_FACTOR (0.8s)
+[24/50] 5b55682e7c7a multi_asset_momentum     sharpe=-2.60 pf=0.69 trades=2626 FAIL SCREENING/LOW_PROFIT_FACTOR (0.6s)
+[25/50] 6b330bb6f5ff multi_asset_momentum     sharpe=0.19 pf=1.02 trades= 468 FAIL SCREENING/LOW_PROFIT_FACTOR (0.8s)
+[26/50] aa9670125a2b multi_asset_momentum     sharpe=0.47 pf=1.03 trades= 914 FAIL SCREENING/LOW_PROFIT_FACTOR (0.6s)
+[27/50] 00b917186de1 multi_asset_momentum     sharpe=0.19 pf=1.01 trades= 805 FAIL SCREENING/LOW_PROFIT_FACTOR (0.8s)
+[28/50] 698167acc1a0 multi_asset_momentum     sharpe=-0.30 pf=0.90 trades= 823 FAIL SCREENING/LOW_PROFIT_FACTOR (0.6s)
+[29/50] 5f6fde29d224 multi_asset_momentum     sharpe=-2.70 pf=0.73 trades=2296 FAIL SCREENING/LOW_PROFIT_FACTOR (0.8s)
+[30/50] 0eb2eb31e2b1 multi_asset_momentum     sharpe=0.22 pf=1.02 trades= 467 FAIL SCREENING/LOW_PROFIT_FACTOR (0.7s)
+[31/50] 2e654f7e3bb4 multi_asset_momentum     sharpe=-6.86 pf=0.69 trades=5228 FAIL SCREENING/LOW_PROFIT_FACTOR (0.6s)
+[32/50] 1d97c31184c5 multi_asset_momentum     sharpe=0.27 pf=1.00 trades= 665 FAIL SCREENING/LOW_PROFIT_FACTOR (0.8s)
+[33/50] 2e2f9aacf1ea multi_asset_momentum     sharpe=0.73 pf=1.07 trades= 525 FAIL WALK_FORWARD/FAILED_OOS_CONSISTENCY (0.9s)
+[34/50] d58dfe13ac77 multi_asset_momentum     sharpe=-1.57 pf=0.78 trades=1812 FAIL SCREENING/LOW_PROFIT_FACTOR (0.6s)
+[35/50] 4e4d86cea8cb multi_asset_momentum     sharpe=0.67 pf=1.11 trades= 486 FAIL CONCENTRATION/HIGH_CONCENTRATION (1.0s)
+[36/50] 633ff9c99377 multi_asset_momentum     sharpe=0.16 pf=0.95 trades= 288 FAIL SCREENING/LOW_PROFIT_FACTOR (0.7s)
+[37/50] 3f4f4148bde2 multi_asset_momentum     sharpe=0.08 pf=0.99 trades= 487 FAIL SCREENING/LOW_PROFIT_FACTOR (0.7s)
+[38/50] 9583db962d6a multi_asset_momentum     sharpe=-1.66 pf=0.83 trades=2151 FAIL SCREENING/LOW_PROFIT_FACTOR (0.6s)
+[39/50] f8eb9a8251b2 funding_rate_contrarian  sharpe=0.69 pf=1.39 trades= 179 FAIL WALK_FORWARD/FAILED_OOS_CONSISTENCY (1.9s)
+[40/50] 23d3af5c5482 funding_rate_contrarian  sharpe=-0.06 pf=0.94 trades= 181 FAIL SCREENING/LOW_PROFIT_FACTOR (1.3s)
+[41/50] cedaa5bda512 funding_rate_contrarian  sharpe=0.31 pf=1.19 trades= 124 FAIL WALK_FORWARD/FAILED_OOS_CONSISTENCY (1.6s)
+[42/50] 8fc104a083cb funding_rate_contrarian  sharpe=-0.39 pf=0.59 trades=  19 FAIL SCREENING/LOW_TRADE_COUNT (1.3s)
+[43/50] b1b1524f6237 funding_rate_contrarian  sharpe=0.21 pf=0.87 trades=  21 FAIL SCREENING/LOW_TRADE_COUNT (1.2s)
+[44/50] 96c8dfe08b9a funding_rate_contrarian  sharpe=0.00 pf=0.00 trades=   0 FAIL CRASH/EXCEPTION: .Portfolio.from_signals( |    (0.0s)
+[45/50] f3ba7fee6713 funding_rate_contrarian  sharpe=0.56 pf=1.87 trades=  32 FAIL WALK_FORWARD/FAILED_OOS_CONSISTENCY (1.8s)
+[46/50] e4661a4baf63 funding_rate_contrarian  sharpe=-0.04 pf=0.87 trades=  60 FAIL SCREENING/LOW_PROFIT_FACTOR (1.3s)
+[47/50] 09012f00b525 funding_rate_contrarian  sharpe=0.31 pf=1.09 trades= 268 FAIL CONCENTRATION/HIGH_CONCENTRATION (2.0s)
+[48/50] ce78eaacaa9f funding_rate_contrarian  sharpe=0.33 pf=1.21 trades= 104 FAIL WALK_FORWARD/FAILED_OOS_CONSISTENCY (1.7s)
+[49/50] 94626dde630f funding_rate_contrarian  sharpe=0.48 pf=0.80 trades= 183 FAIL SCREENING/LOW_PROFIT_FACTOR (1.2s)
+[50/50] 6db78967d6cc funding_rate_contrarian  sharpe=0.35 pf=1.08 trades=  89 FAIL WALK_FORWARD/FAILED_OOS_CONSISTENCY (1.7s)
+
+============================================================
+GENERATION 3 COMPLETE: tested=50 survivors=0
+  funding_rate_contrarian    0/12 best_sharpe=0.69 fails={'FAILED_OOS_CONSISTENCY': 5, 'LOW_PROFIT_FACTOR': 3, 'LOW_TRADE_COUNT': 2, 'EXCEPTION': 1, 'HIGH_CONCENTRATION': 1}
+  multi_asset_momentum       0/16 best_sharpe=0.73 fails={'LOW_PROFIT_FACTOR': 14, 'FAILED_OOS_CONSISTENCY': 1, 'HIGH_CONCENTRATION': 1}
+  spread_zscore              0/22 best_sharpe=1.10 fails={'LOW_PROFIT_FACTOR': 13, 'HIGH_CONCENTRATION': 3, 'FAILED_OOS_CONSISTENCY': 6}

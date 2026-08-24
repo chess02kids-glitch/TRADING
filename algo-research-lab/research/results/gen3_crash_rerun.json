@@ -1,0 +1,15 @@
+{
+ "rerun_of": "96c8dfe08b9a",
+ "passed": false,
+ "gate_failed": "SCREENING",
+ "reason": "LOW_TRADE_COUNT",
+ "metrics": {
+  "total_trades": 42,
+  "total_return_pct": -100.72279119699562,
+  "sharpe": 0.22400922371517717,
+  "sortino": 0.6331235494370174,
+  "max_drawdown_pct": 145.99962755436064,
+  "profit_factor": 0.48603111674112337,
+  "win_rate_pct": 46.34146341463415
+ }
+}

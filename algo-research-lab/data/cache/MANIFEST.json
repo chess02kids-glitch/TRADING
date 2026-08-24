@@ -1,0 +1,80 @@
+{
+  "provenance": {
+    "btc_usdt_1h_2017_2019.csv": {
+      "source": "Binance spot klines 1h (BTCUSDT), vendored CSV",
+      "retrieved_via": "https://codeload.github.com/cryptobigbro/binance-BTCUSDT (master)",
+      "original_columns": "open_timestamp_utc,close_timestamp_utc,open,high,low,close,volume"
+    },
+    "eth_usdt_1h_2017_2019.csv": {
+      "source": "Binance spot klines 1h (ETHUSDT), vendored CSV",
+      "retrieved_via": "https://codeload.github.com/cryptobigbro/binance-ETHUSDT (master)"
+    },
+    "funding_rates_BTC.csv": {
+      "source": "Binance USDT-M perpetual BTCUSDT funding rate history, 8h settlements",
+      "retrieved_via": "https://codeload.github.com/supervik/historical-funding-rates-fetcher (main)",
+      "columns": "Symbol,Date,Funding Rate (decimal fraction, e.g. -0.00012359 = -0.012359%)"
+    },
+    "funding_rates_ETH.csv": {
+      "source": "Binance USDT-M perpetual ETHUSDT funding rate history, 8h settlements",
+      "retrieved_via": "https://codeload.github.com/supervik/historical-funding-rates-fetcher (main)"
+    },
+    "btc_usd_1h_2020_2023.csv": {
+      "source": "Bitstamp BTC/USD 1-minute OHLCV, resampled to 1h",
+      "retrieved_via": "https://codeload.github.com/ff137/bitstamp-btcusd-minute-data (main)",
+      "note": "raw 1m csv.gz (95MB) kept outside the repo; only the 1h resample is cached"
+    }
+  },
+  "stats": {
+    "windows": {
+      "btc_usdt_1h_A": {
+        "rows_raw": 19322,
+        "grid_rows": 19414,
+        "missing_hour_bars_filled": 135,
+        "start": "2017-08-17 04:00:00+00:00",
+        "end": "2019-11-04 01:00:00+00:00"
+      },
+      "eth_usdt_1h_A": {
+        "rows_raw": 20062,
+        "grid_rows": 20158,
+        "missing_hour_bars_filled": 139,
+        "start": "2017-08-17 04:00:00+00:00",
+        "end": "2019-12-05 01:00:00+00:00"
+      },
+      "window_A": {
+        "rows": 19414,
+        "start": "2017-08-17 04:00:00+00:00",
+        "end": "2019-11-04 01:00:00+00:00",
+        "venue": "Binance spot",
+        "note": "BTC/USDT and ETH/USDT on identical hourly grid"
+      },
+      "btc_usd_1h_B": {
+        "rows_raw": 35808,
+        "grid_rows": 35808,
+        "missing_hour_bars_filled": 0,
+        "start": "2019-12-01 00:00:00+00:00",
+        "end": "2023-12-31 23:00:00+00:00"
+      },
+      "funding_BTC": {
+        "rows": 4383,
+        "start": "2020-01-01 03:00:00+00:00",
+        "end": "2023-12-31 19:00:00+00:00",
+        "settlement_hours_utc": [
+          3,
+          11,
+          19
+        ],
+        "p5_pct": -0.0069119,
+        "median_pct": 0.01,
+        "p95_pct": 0.06192799999999997
+      }
+    }
+  },
+  "sha16": {
+    "btc_usd_1h_2020_2023.csv": "5b1498831b234566",
+    "btc_usdt_1h_2017_2019.csv": "9e7245fadaca8494",
+    "eth_usdt_1h_2017_2019.csv": "571565e96a2358ed",
+    "funding_rates_BTC.csv": "c03444292619e189",
+    "funding_rates_ETH.csv": "14daf901f3a48d4d"
+  },
+  "generated_by": "algo-research-lab/data/prepare_data.py"
+}
