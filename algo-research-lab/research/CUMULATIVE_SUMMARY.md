@@ -52,3 +52,11 @@ crypto mean reversion is structurally broken - it also fails on the cross-asset 
 - Supabase unreachable from this sandbox (no SUPABASE_DB_URL / network allowlist): every row was written one-by-one to the SQLite mirror data/research_generations.sqlite (identical schema to supabase/007_lab_schema.sql) and research/results/log.jsonl. supabase/007_lab_schema.sql applies the same table/columns (ADD COLUMN IF NOT EXISTS, nothing dropped) when credentials exist.
 - Engine: vectorbt 1.1.0, certified by agent/certify_engine.py (7/7 tests incl. size_type='percent' sizing and same-bar close execution). Zero-trades guard is the first check in Gate 1.
 - Gate 5 in Gen 3 used the same pre-registered stability parameters; only min_trades was loosened (documented above).
+
+## Generation 4 — Validation Stop (2026-08-24)
+
+| Generation | Planned | Tested | Survivors | Status |
+|---|---:|---:|---:|---|
+| Gen 4 | 50 | 0 | 0 | Blocked before execution: required 2024–2026 BTC/USDT + ETH/USDT 1h and aligned funding data was unavailable; all local data ends no later than 2023-12-31 and exchange endpoints were unreachable. |
+
+Gen 4 is **not** included in the total genome count above: no genome was generated, inserted, or backtested. The exact `dbf438564958` genome was retrieved from the SQLite mirror. `GEN_4_RESULTS.md` records the full validation-stop evidence. Gates were unchanged; no pre-2024 substitute run was performed; `sandbox/pattern_research/`, `kronos_trading/`, and `.github/workflows/` were untouched. The research certification harness was remediated so every `vbt.Portfolio.from_signals` call under `algo-research-lab/` explicitly declares `size_type="percent"`.

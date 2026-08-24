@@ -17,7 +17,7 @@ def test_1_buy_and_hold():
     exits = pd.Series(False, index=dates)
     entries.iloc[0] = True  # Buy on first bar
     
-    pf = vbt.Portfolio.from_signals(close, entries, exits, freq="1h", init_cash=10000.0, fees=0.001, slippage=0.001)
+    pf = vbt.Portfolio.from_signals(close, entries, exits, size_type="percent", freq="1h", init_cash=10000.0, fees=0.001, slippage=0.001)
     
     # Hand calculation:
     # cash = 10000
@@ -39,7 +39,7 @@ def test_2_always_flat():
     entries = pd.Series(False, index=dates)
     exits = pd.Series(False, index=dates)
     
-    pf = vbt.Portfolio.from_signals(close, entries, exits, freq="1h", init_cash=10000.0, fees=0.001, slippage=0.001)
+    pf = vbt.Portfolio.from_signals(close, entries, exits, size_type="percent", freq="1h", init_cash=10000.0, fees=0.001, slippage=0.001)
     
     trade_count = len(pf.trades)
     final_val = pf.value().iloc[-1]
@@ -59,7 +59,7 @@ def test_3_alternating_signal():
         entries.iloc[i] = True
         exits.iloc[i+10] = True
         
-    pf = vbt.Portfolio.from_signals(close, entries, exits, freq="1h", init_cash=10000.0, fees=0.0, slippage=0.0)
+    pf = vbt.Portfolio.from_signals(close, entries, exits, size_type="percent", freq="1h", init_cash=10000.0, fees=0.0, slippage=0.0)
     
     trade_count = len(pf.trades)
     print(f"Test 3 (Alternating) -> Trades: {trade_count}, Final Value: {pf.value().iloc[-1]:.2f}")
@@ -78,7 +78,7 @@ def test_4_synthetic_trend():
     entries = sma10 > sma20
     exits = sma10 < sma20
     
-    pf = vbt.Portfolio.from_signals(close, entries, exits, freq="1h", init_cash=10000.0, fees=0.0, slippage=0.0)
+    pf = vbt.Portfolio.from_signals(close, entries, exits, size_type="percent", freq="1h", init_cash=10000.0, fees=0.0, slippage=0.0)
     ret = pf.returns().sum()
     print(f"Test 4 (Synthetic Trend) -> Trades: {len(pf.trades)}, Return: {ret*100:.2f}%")
     assert ret > 0, "Trend following on perfect trend should be positive"
@@ -92,7 +92,7 @@ def test_5_synthetic_mr():
     entries = close == 100
     exits = close == 102
     
-    pf = vbt.Portfolio.from_signals(close, entries, exits, freq="1h", init_cash=10000.0, fees=0.0, slippage=0.0)
+    pf = vbt.Portfolio.from_signals(close, entries, exits, size_type="percent", freq="1h", init_cash=10000.0, fees=0.0, slippage=0.0)
     ret = pf.returns().sum()
     final_val = pf.value().iloc[-1]
     print(f"Test 5 (Synthetic MR) -> Trades: {len(pf.trades)}, Final Value: {final_val:.2f}, Return: {ret*100:.2f}%")
@@ -108,7 +108,7 @@ def test_signal_alignment():
     entries.iloc[5] = True
     exits.iloc[10] = True
     
-    pf = vbt.Portfolio.from_signals(close, entries, exits, freq="1h", fees=0.0, slippage=0.0)
+    pf = vbt.Portfolio.from_signals(close, entries, exits, size_type="percent", freq="1h", fees=0.0, slippage=0.0)
     records = pf.trades.records_readable
     
     entry_idx = records["Entry Timestamp"].iloc[0]
