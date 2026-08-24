@@ -63,3 +63,15 @@ crypto mean reversion is structurally broken - it also fails on the cross-asset 
 |---|---|---|
 | spread momentum | OPEN — mechanics validation required | 2024–26: 2/40 passed screening; both failed concentration. Current single-leg proxy did not implement actual partial closes. |
 | multi_asset_momentum | CLOSED for this local stability neighborhood | 0/10 dbf438 lookback variants passed Gate 5. |
+
+## Generation 5 Update
+| Gen | Genomes | Survivors | Best Sharpe | Primary Gate |
+|---|---:|---:|---:|---|
+| 5 | 50 | 0 | 0.19 | SCREENING |
+| TOTAL | 280 | 0 | 1.55 | |
+
+- **Two-leg spread:** CLOSED. All 20 honest two-leg simulations failed Gate 1; the three manual-PnL fixtures passed.
+- **Realized-vol regime:** CLOSED in this parameter space; 2/10 reached Gate 2 but failed OOS.
+- **Open-interest delta:** Inconclusive / closed for OI-proxy implementation; 0/10 trades. Do not infer real-OI results from volume proxy.
+- **Liquidation bounce:** CLOSED in this parameter space; 0/10 trades under the sampled event thresholds.
+- **Research status:** STOP RULE TRIGGERED. Do not launch Gen 6 without new data or HAR-calibration evidence.
